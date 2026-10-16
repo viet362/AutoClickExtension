@@ -1,0 +1,300 @@
+/* AutoFlow - In-Page Floating Toolbar & Inspector Styles */
+
+:root {
+  --af-bg-dark: rgba(15, 23, 42, 0.94);
+  --af-border: rgba(99, 102, 241, 0.3);
+  --af-primary: #6366f1;
+  --af-primary-hover: #4f46e5;
+  --af-success: #10b981;
+  --af-danger: #ef4444;
+  --af-warning: #f59e0b;
+  --af-text: #f8fafc;
+  --af-text-muted: #94a3b8;
+  --af-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Floating Toolbar Container */
+#autoflow-floating-bar {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2147483647;
+  font-family: var(--af-font);
+  background: var(--af-bg-dark);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--af-border);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 0 20px rgba(99, 102, 241, 0.2);
+  border-radius: 16px;
+  color: var(--af-text);
+  min-width: 340px;
+  max-width: 420px;
+  padding: 14px 16px;
+  user-select: none;
+  font-size: 13px;
+  line-height: 1.4;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+}
+
+#autoflow-floating-bar * {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: inherit;
+}
+
+#autoflow-floating-bar.af-minimized {
+  min-width: auto;
+  max-width: 260px;
+  padding: 8px 12px;
+  border-radius: 9999px;
+  cursor: pointer;
+}
+
+#autoflow-floating-bar.af-minimized .af-full-view {
+  display: none !important;
+}
+
+#autoflow-floating-bar.af-minimized .af-mini-view {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.af-mini-view {
+  display: none;
+}
+
+/* Header */
+.af-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  cursor: grab;
+}
+
+.af-header:active {
+  cursor: grabbing;
+}
+
+.af-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.2px;
+}
+
+.af-logo-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 11px;
+}
+
+.af-status-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.af-badge-idle {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+}
+
+.af-badge-recording {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  animation: af-pulse 1.5s infinite;
+}
+
+.af-badge-running {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  animation: af-pulse 1.5s infinite;
+}
+
+.af-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.af-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.af-btn-icon {
+  background: transparent;
+  border: none;
+  color: var(--af-text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.af-btn-icon:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--af-text);
+}
+
+/* Body */
+.af-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.af-info-box {
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.af-info-title {
+  font-size: 11px;
+  color: var(--af-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.af-info-value {
+  font-weight: 600;
+  color: #fff;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.af-steps-count {
+  font-size: 12px;
+  color: var(--af-primary);
+  background: rgba(99, 102, 241, 0.15);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Progress Bar */
+.af-progress-container {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.af-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #10b981);
+  border-radius: 999px;
+  width: 0%;
+  transition: width 0.3s ease;
+}
+
+/* Actions Footer */
+.af-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.af-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.18s ease;
+}
+
+.af-btn-primary {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: white;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.af-btn-primary:hover {
+  background: linear-gradient(135deg, #4f46e5, #4338ca);
+  transform: translateY(-1px);
+}
+
+.af-btn-danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.af-btn-danger:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+}
+
+.af-btn-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.af-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+/* Target Inspector Highlighter */
+.af-inspect-highlight {
+  outline: 2px dashed #6366f1 !important;
+  outline-offset: 3px !important;
+  background-color: rgba(99, 102, 241, 0.12) !important;
+  transition: outline 0.15s ease, background-color 0.15s ease !important;
+  cursor: crosshair !important;
+}
+
+/* Playback Pulsing Highlight */
+.af-playback-highlight {
+  outline: 3px solid #10b981 !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.6) !important;
+  background-color: rgba(16, 185, 129, 0.15) !important;
+  animation: af-glow 0.8s ease-in-out infinite alternate !important;
+}
+
+@keyframes af-pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+@keyframes af-glow {
+  from { box-shadow: 0 0 8px rgba(16, 185, 129, 0.4); }
+  to { box-shadow: 0 0 20px rgba(16, 185, 129, 0.8); }
+}

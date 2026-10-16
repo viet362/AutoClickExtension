@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoFlow - Macro & Excel Automator</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">AutoFlow</h1>
+          <span class="brand-tag">Macro & Excel RPA</span>
+        </div>
+      </div>
+      <div class="header-status">
+        <span class="status-indicator" id="headerStatusDot"></span>
+        <span class="status-text" id="headerStatusText">Sẵn sàng</span>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" data-tab="tab-scenarios" id="btnTabScenarios">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+        </svg>
+        Kịch bản
+      </button>
+      <button class="nav-tab" data-tab="tab-data" id="btnTabData">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <line x1="3" y1="9" x2="21" y2="9"></line>
+          <line x1="9" y1="21" x2="9" y2="9"></line>
+        </svg>
+        Excel / Dữ liệu
+        <span class="tab-badge" id="dataRowsBadge" style="display:none;">0</span>
+      </button>
+      <button class="nav-tab" data-tab="tab-runner" id="btnTabRunner">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+        </svg>
+        Chạy tự động
+      </button>
+      <button class="nav-tab" data-tab="tab-settings" id="btnTabSettings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+    </nav>
+
+    <!-- TAB 1: KỊCH BẢN (SCENARIOS) -->
+    <main class="tab-content active" id="tab-scenarios">
+      <div class="scenario-selector-box">
+        <label class="section-label">Chọn kịch bản làm việc:</label>
+        <div class="selector-row">
+          <select id="scenarioSelect" class="form-select"></select>
+          <button class="btn btn-secondary btn-sm" id="btnNewScenario" title="Tạo mới">+</button>
+          <button class="btn btn-danger-ghost btn-sm" id="btnDeleteScenario" title="Xóa">🗑️</button>
+        </div>
+      </div>
+
+      <!-- Action Banner: Bắt đầu ghi -->
+      <div class="record-banner">
+        <div class="record-info">
+          <h3 class="record-title">Ghi nhớ thao tác thực tế</h3>
+          <p class="record-desc">Bấm nút bên dưới rồi thao tác chuột/phím trên web 1 lần làm mẫu.</p>
+        </div>
+        <button class="btn btn-record" id="btnStartRecord">
+          <span class="record-dot"></span>
+          Bắt đầu ghi mẫu
+        </button>
+      </div>
+
+      <!-- Steps List Container -->
+      <div class="steps-section">
+        <div class="steps-header">
+          <h4 class="steps-title">
+            Các bước trong kịch bản 
+            <span class="steps-badge" id="stepsCountBadge">0 bước</span>
+          </h4>
+          <button class="btn btn-link btn-xs" id="btnAddManualStep">+ Thêm bước thủ công</button>
+        </div>
+        <div class="steps-list" id="stepsListContainer">
+          <!-- Các bước sẽ được render tự động -->
+        </div>
+      </div>
+    </main>
+
+    <!-- TAB 2: DỮ LIỆU EXCEL / CSV -->
+    <main class="tab-content" id="tab-data">
+      <!-- Cấu hình cách đọc dòng 1 của file Excel -->
+      <div class="excel-config-box" style="margin-bottom: 12px; padding: 10px 14px; background: rgba(30, 41, 59, 0.6); border: 1px solid #334155; border-radius: 8px;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: #f8fafc;">
+          <input type="checkbox" id="chkFirstRowIsData" checked style="width: 16px; height: 16px; accent-color: #3b82f6;">
+          <span><strong>Dòng đầu tiên là dữ liệu</strong> (File không có tiêu đề, bắt đầu chạy ngay từ dòng 1)</span>
+        </label>
+      </div>
+
+      <div class="upload-dropzone" id="excelDropzone">
+        <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" style="display: none;">
+        <div class="upload-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+        </div>
+        <h3 class="upload-title">Chọn hoặc Kéo thả file Excel / CSV</h3>
+        <p class="upload-subtitle">Hỗ trợ định dạng .xlsx, .xls, .csv</p>
+        <button class="btn btn-primary btn-sm" id="btnBrowseFile">Chọn file từ máy</button>
+      </div>
+
+      <!-- Excel File Info & Columns Helper -->
+      <div class="data-preview-card" id="dataPreviewCard" style="display: none;">
+        <div class="file-summary">
+          <div class="file-info-col">
+            <span class="file-name" id="previewFileName">data.xlsx</span>
+            <span class="file-stats" id="previewFileStats">0 dòng | 0 cột</span>
+          </div>
+          <button class="btn btn-danger-ghost btn-xs" id="btnClearData">Xóa</button>
+        </div>
+
+        <div class="columns-helper">
+          <span class="section-label">Bấm vào tên cột để sao chép (hoàn toàn không có ngoặc):</span>
+          <div class="column-chips" id="columnChipsContainer">
+            <!-- Chips hiển thị đúng tên cột nguyên bản -->
+          </div>
+        </div>
+
+        <!-- Mini Preview Table -->
+        <div class="table-scroll-wrapper">
+          <table class="preview-table" id="previewTable">
+            <thead id="previewTableHead"></thead>
+            <tbody id="previewTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <!-- TAB 3: CHẠY TỰ ĐỘNG (RUNNER) -->
+    <main class="tab-content" id="tab-runner">
+      <div class="runner-card">
+        <div class="runner-row">
+          <span class="runner-label">Kịch bản:</span>
+          <span class="runner-val" id="runnerScenarioName">Chưa chọn</span>
+        </div>
+        <div class="runner-row">
+          <span class="runner-label">Nguồn dữ liệu:</span>
+          <span class="runner-val" id="runnerDataInfo">Chưa nạp Excel (Chạy 1 lần)</span>
+        </div>
+        <div class="runner-row">
+          <span class="runner-label">Bắt đầu từ:</span>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span>Dòng</span>
+            <input type="number" id="runStartRow" value="1" min="1" style="width: 50px; padding: 3px 6px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: #fff; text-align: center; font-weight: 600;">
+            <span id="runStartRowInfo" style="font-size: 11px; color: #94a3b8;">(Mặc định chạy từ dòng 1)</span>
+          </div>
+        </div>
+        <div class="runner-row">
+          <span class="runner-label">Tốc độ chạy:</span>
+          <select id="runSpeedSelect" class="form-select-sm">
+            <option value="0.75">Cực nhanh (0.75x)</option>
+            <option value="1" selected>Bình thường (1x)</option>
+            <option value="1.5">An toàn / Chờ mạng chậm (1.5x)</option>
+            <option value="2">Rất an toàn (2x)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Run Progress Box -->
+      <div class="run-progress-box" id="runProgressBox" style="display: none;">
+        <div class="progress-status-row">
+          <span class="progress-status-text" id="progressStatusText">Đang chạy...</span>
+          <span class="progress-pct" id="progressPctText">0%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-bar-fill" id="progressBarFill"></div>
+        </div>
+      </div>
+
+      <!-- Big Run Control Buttons -->
+      <div class="run-controls">
+        <button class="btn btn-run-large" id="btnStartRunner">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          BẮT ĐẦU CHẠY TỰ ĐỘNG
+        </button>
+        <button class="btn btn-danger btn-run-large" id="btnStopRunner" style="display: none;">
+          ⏹️ DỪNG KHẨN CẤP
+        </button>
+      </div>
+
+      <!-- Execution Logs Table -->
+      <div class="logs-section">
+        <div class="logs-header">
+          <span class="section-label">Nhật ký thực thi:</span>
+          <button class="btn btn-link btn-xs" id="btnClearLogs">Xóa nhật ký</button>
+        </div>
+        <div class="logs-container" id="logsContainer">
+          <div class="log-item log-empty">Chưa có nhật ký hoạt động. Bấm Chạy để bắt đầu.</div>
+        </div>
+      </div>
+    </main>
+
+    <!-- TAB 4: CÀI ĐẶT & HƯỚNG DẪN -->
+    <main class="tab-content" id="tab-settings">
+      <div class="settings-group">
+        <h4 class="settings-group-title">Quản lý & Chia sẻ</h4>
+        <div class="settings-row">
+          <div>
+            <div class="setting-name">Xuất kịch bản (Export JSON)</div>
+            <div class="setting-desc">Tải kịch bản về máy để sao lưu hoặc gửi cho đồng nghiệp.</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="btnExportJson">Xuất file</button>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="setting-name">Nhập kịch bản (Import JSON)</div>
+            <div class="setting-desc">Nạp kịch bản từ file JSON của người khác vào máy.</div>
+          </div>
+          <input type="file" id="importJsonInput" accept=".json" style="display: none;">
+          <button class="btn btn-secondary btn-sm" id="btnImportJson">Nhập file</button>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h4 class="settings-group-title">Hướng dẫn sử dụng nhanh</h4>
+        <div class="help-box">
+          <p><strong>1. Ghi kịch bản:</strong> Bấm "Bắt đầu ghi", thực hiện thao tác mẫu 1 lần trên web rồi bấm "Dừng & Lưu".</p>
+          <p><strong>2. Gán dữ liệu Excel:</strong> Nạp file Excel ở Tab 2, sau đó vào từng bước đổi nội dung thành <code>{{Tên_Cột}}</code>.</p>
+          <p><strong>3. Chạy lặp:</strong> Vào Tab 3 bấm "Bắt đầu chạy", Extension sẽ tự duyệt qua từng ô/dòng của Excel và thao tác trên web.</p>
+        </div>
+      </div>
+    </main>
+
+    <!-- Modal: Chỉnh sửa bước chuyên nghiệp (Không cần gõ ngoặc thủ công) -->
+    <div class="modal-overlay" id="editStepModal" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 class="modal-title">Chỉnh sửa bước</h3>
+          <button class="modal-close" id="btnModalClose">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group-modal">
+            <label class="section-label">Mô tả bước:</label>
+            <input type="text" id="modalStepDesc" class="form-input-modal">
+          </div>
+          
+          <div id="modalTypeGroup" style="display: none;">
+            <label class="section-label">Dữ liệu điền vào ô:</label>
+            <div class="modal-radio-tabs">
+              <label class="radio-label">
+                <input type="radio" name="valueSource" value="column" id="radioColSource" checked>
+                Chọn Cột Excel
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="valueSource" value="custom" id="radioCustomSource">
+                Nhập chữ cố định
+              </label>
+            </div>
+
+            <!-- Option 1: Chọn thẳng từ dropdown không cần gõ ngoặc -->
+            <div id="colSelectWrap" style="margin-top: 8px;">
+              <select id="modalColSelect" class="form-select">
+                <option value="">-- Chọn cột Excel --</option>
+              </select>
+              <span class="help-text">Tự động lấy giá trị tương ứng từng dòng theo cột đã chọn.</span>
+            </div>
+
+            <!-- Option 2: Nhập tùy chỉnh -->
+            <div id="customValueWrap" style="display: none; margin-top: 8px;">
+              <input type="text" id="modalCustomValue" class="form-input-modal" placeholder="Ví dụ: Ma_Don hoặc nội dung cố định">
+              <span class="help-text">Nhập đúng tên cột hoặc nội dung cố định, 100% không cần dấu ngoặc.</span>
+            </div>
+          </div>
+
+          <!-- Nhóm cấu hình cho click dòng bảng (Bút chì, xem chi tiết...) -->
+          <div id="modalClickTableGroup" style="display: none; margin-top: 10px; padding: 10px; background: rgba(30, 41, 59, 0.5); border: 1px solid #334155; border-radius: 6px;">
+            <label class="section-label" style="margin-bottom: 6px;">Mục tiêu dòng trong bảng kết quả:</label>
+            <div class="modal-radio-tabs">
+              <label class="radio-label">
+                <input type="radio" name="tableRowTarget" value="keyword" id="radioRowKeyword" checked>
+                Theo từ khóa dòng
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="tableRowTarget" value="index" id="radioRowIndex">
+                Theo số dòng
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="tableRowTarget" value="default" id="radioRowDefault">
+                Tự động
+              </label>
+            </div>
+
+            <div id="rowKeywordWrap" style="margin-top: 8px;">
+              <input type="text" id="modalRowKeyword" class="form-input-modal" placeholder="Ví dụ: Calibration (hoặc EIH, Setup...)">
+              <span class="help-text">AutoFlow sẽ quét bảng và click bút chì đúng dòng có chữ này.</span>
+            </div>
+
+            <div id="rowIndexWrap" style="display: none; margin-top: 8px;">
+              <input type="number" id="modalRowIndex" class="form-input-modal" placeholder="Ví dụ: 4 (Dòng số 4)" min="1">
+              <span class="help-text">Click nút bút chì ở dòng thứ N trong bảng kết quả.</span>
+            </div>
+          </div>
+
+          <div class="form-group-modal" style="margin-top: 10px;">
+            <label class="section-label">Thời gian chờ sau bước (ms):</label>
+            <input type="number" id="modalStepDelay" class="form-input-modal" min="100" step="100" value="400">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary btn-sm" id="btnModalCancel">Hủy</button>
+          <button class="btn btn-primary btn-sm" id="btnModalSave">Lưu thay đổi</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <span>AutoFlow v1.0 • Chạy mượt mà không cần quyền Admin</span>
+    </footer>
+  </div>
+
+  <!-- Scripts -->
+  <script src="../libs/xlsx.full.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
