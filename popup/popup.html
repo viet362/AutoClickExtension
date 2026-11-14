@@ -67,6 +67,7 @@
         <label class="section-label">Chọn kịch bản làm việc:</label>
         <div class="selector-row">
           <select id="scenarioSelect" class="form-select"></select>
+          <button class="btn btn-secondary btn-sm" id="btnRenameScenario" title="Đổi tên kịch bản">✏️</button>
           <button class="btn btn-secondary btn-sm" id="btnNewScenario" title="Tạo mới">+</button>
           <button class="btn btn-danger-ghost btn-sm" id="btnDeleteScenario" title="Xóa">🗑️</button>
         </div>
@@ -91,7 +92,27 @@
             Các bước trong kịch bản 
             <span class="steps-badge" id="stepsCountBadge">0 bước</span>
           </h4>
-          <button class="btn btn-link btn-xs" id="btnAddManualStep">+ Thêm bước thủ công</button>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <button class="btn btn-link btn-xs" id="btnAutoMapColumns" title="Tự động gán cột Excel cho các bước gõ dữ liệu trùng với giá trị trong file">🪄 Tự gán cột</button>
+            <button class="btn btn-link btn-xs" id="btnAddWaitStep" title="Chèn thêm một bước nghỉ/chờ cố định (tính bằng giây)">⏱️ +Bước chờ</button>
+            <button class="btn btn-link btn-xs" id="btnAddManualStep">+ Thêm bước</button>
+          </div>
+        </div>
+
+        <!-- Thanh đặt nhanh số giây delay cho toàn bộ các bước -->
+        <div class="bulk-delay-bar" id="bulkDelayBar">
+          <div class="bulk-delay-left">
+            <span>⏱️ Delay mỗi bước:</span>
+            <input type="number" id="bulkDelaySecInput" value="1" min="0" max="120" step="0.5" class="bulk-delay-input" title="Số giây nghỉ trước mỗi bước">
+            <span>giây</span>
+            <button class="btn btn-secondary btn-xs" id="btnApplyBulkDelay" title="Áp dụng số giây này cho tất cả các bước trong kịch bản">Áp dụng tất cả</button>
+          </div>
+          <div class="bulk-delay-presets">
+            <button type="button" class="delay-chip" data-sec="0.5">0.5s</button>
+            <button type="button" class="delay-chip" data-sec="1">1s</button>
+            <button type="button" class="delay-chip" data-sec="2">2s</button>
+            <button type="button" class="delay-chip" data-sec="3">3s</button>
+          </div>
         </div>
         <div class="steps-list" id="stepsListContainer">
           <!-- Các bước sẽ được render tự động -->
@@ -134,9 +155,12 @@
         </div>
 
         <div class="columns-helper">
-          <span class="section-label">Bấm vào tên cột để sao chép (hoàn toàn không có ngoặc):</span>
+          <span class="section-label">Tên cột biến số (bấm để copy gán vào kịch bản):</span>
           <div class="column-chips" id="columnChipsContainer">
             <!-- Chips hiển thị đúng tên cột nguyên bản -->
+          </div>
+          <div style="font-size: 11px; color: #94a3b8; margin-top: 6px;">
+            💡 <em>Mẹo: Bạn có thể <strong>bấm trực tiếp vào bất kỳ ô nào trong bảng bên dưới</strong> để sao chép giá trị thật dán thử.</em>
           </div>
         </div>
 
@@ -170,12 +194,36 @@
           </div>
         </div>
         <div class="runner-row">
+          <span class="runner-label">Lặp lại kịch bản:</span>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <input type="number" id="runRepeatCount" value="1" min="1" max="9999" step="1" style="width: 50px; padding: 3px 6px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: #38bdf8; text-align: center; font-weight: 700;" title="Số lần lặp lại toàn bộ kịch bản (mặc định 1)">
+            <span>lần</span>
+            <span style="font-size: 11px; color: #94a3b8;">(Mặc định 1 lần)</span>
+          </div>
+        </div>
+        <div class="runner-row">
+          <span class="runner-label">Cộng thêm delay:</span>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span>+</span>
+            <input type="number" id="runExtraDelaySec" value="0" min="0" max="120" step="0.5" style="width: 56px; padding: 3px 6px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: #34d399; text-align: center; font-weight: 700;" title="Cộng thêm số giây chờ vào tất cả các bước khi chạy">
+            <span style="font-size: 11px; color: #94a3b8;">giây / bước</span>
+          </div>
+        </div>
+        <div class="runner-row">
           <span class="runner-label">Tốc độ chạy:</span>
-          <select id="runSpeedSelect" class="form-select-sm">
-            <option value="0.75">Cực nhanh (0.75x)</option>
+          <select id="runSpeedSelect" class="form-select-sm" title="Hệ số nhân thời gian chờ giữa các bước">
+            <option value="0.5">Turbo (0.5x thời gian chờ)</option>
+            <option value="0.75">Nhanh (0.75x)</option>
             <option value="1" selected>Bình thường (1x)</option>
-            <option value="1.5">An toàn / Chờ mạng chậm (1.5x)</option>
+            <option value="1.5">An toàn / Mạng chậm (1.5x)</option>
             <option value="2">Rất an toàn (2x)</option>
+          </select>
+        </div>
+        <div class="runner-row">
+          <span class="runner-label">Khi gặp lỗi:</span>
+          <select id="runErrorModeSelect" class="form-select-sm">
+            <option value="stop" selected>Tạm dừng &amp; hỏi tôi</option>
+            <option value="skip">Bỏ qua dòng lỗi, chạy tiếp</option>
           </select>
         </div>
       </div>
@@ -208,7 +256,10 @@
       <div class="logs-section">
         <div class="logs-header">
           <span class="section-label">Nhật ký thực thi:</span>
-          <button class="btn btn-link btn-xs" id="btnClearLogs">Xóa nhật ký</button>
+          <div style="display: flex; gap: 6px;">
+            <button class="btn btn-link btn-xs" id="btnExportResults" title="Tải file Excel kết quả của lần chạy gần nhất">📥 Tải báo cáo</button>
+            <button class="btn btn-link btn-xs" id="btnClearLogs">Xóa nhật ký</button>
+          </div>
         </div>
         <div class="logs-container" id="logsContainer">
           <div class="log-item log-empty">Chưa có nhật ký hoạt động. Bấm Chạy để bắt đầu.</div>
@@ -240,9 +291,9 @@
       <div class="settings-group">
         <h4 class="settings-group-title">Hướng dẫn sử dụng nhanh</h4>
         <div class="help-box">
-          <p><strong>1. Ghi kịch bản:</strong> Bấm "Bắt đầu ghi", thực hiện thao tác mẫu 1 lần trên web rồi bấm "Dừng & Lưu".</p>
-          <p><strong>2. Gán dữ liệu Excel:</strong> Nạp file Excel ở Tab 2, sau đó vào từng bước đổi nội dung thành <code>{{Tên_Cột}}</code>.</p>
-          <p><strong>3. Chạy lặp:</strong> Vào Tab 3 bấm "Bắt đầu chạy", Extension sẽ tự duyệt qua từng ô/dòng của Excel và thao tác trên web.</p>
+          <p><strong>1. Ghi kịch bản:</strong> Bấm "Bắt đầu ghi", thực hiện thao tác mẫu 1 lần trên web rồi bấm "Dừng &amp; Lưu". Có thể chuyển trang trong lúc ghi.</p>
+          <p><strong>2. Gán dữ liệu Excel:</strong> Nạp file Excel ở Tab 2, bấm <strong>🪄 Tự gán cột</strong> (nếu lúc ghi bạn gõ đúng dữ liệu của file) hoặc bấm ✏️ ở từng bước để chọn cột.</p>
+          <p><strong>3. Chạy lặp:</strong> Vào Tab 3 bấm "Bắt đầu chạy". Khi gặp lỗi, thanh nổi cho phép Thử lại / Bỏ qua. Chạy xong có thể tải báo cáo Excel.</p>
         </div>
       </div>
     </main>
@@ -258,6 +309,12 @@
           <div class="form-group-modal">
             <label class="section-label">Mô tả bước:</label>
             <input type="text" id="modalStepDesc" class="form-input-modal">
+          </div>
+
+          <div class="form-group-modal" id="modalSelectorGroup" style="margin-top: 10px;">
+            <label class="section-label">Phần tử mục tiêu (CSS Selector - nâng cao):</label>
+            <input type="text" id="modalStepSelector" class="form-input-modal" spellcheck="false" style="font-family: ui-monospace, Menlo, monospace; font-size: 11px;">
+            <span class="help-text">Có thể dùng {Tên_Cột} để chèn dữ liệu Excel, ví dụ: tr::-af-row("{Ma_Don}") button</span>
           </div>
           
           <div id="modalTypeGroup" style="display: none;">
@@ -318,8 +375,29 @@
           </div>
 
           <div class="form-group-modal" style="margin-top: 10px;">
-            <label class="section-label">Thời gian chờ sau bước (ms):</label>
-            <input type="number" id="modalStepDelay" class="form-input-modal" min="100" step="100" value="400">
+            <label class="section-label">Thời gian chờ (delay) trước khi thao tác (giây):</label>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <input type="number" id="modalStepDelay" class="form-input-modal" min="0" max="300" step="0.1" value="0.5" style="flex: 1;">
+              <span style="font-size: 12px; color: #cbd5e1; font-weight: 600;">giây</span>
+            </div>
+            <div class="modal-delay-presets" style="display: flex; gap: 6px; margin-top: 6px;">
+              <button type="button" class="delay-chip modal-delay-chip" data-sec="0.5">0.5s</button>
+              <button type="button" class="delay-chip modal-delay-chip" data-sec="1">1s</button>
+              <button type="button" class="delay-chip modal-delay-chip" data-sec="1.5">1.5s</button>
+              <button type="button" class="delay-chip modal-delay-chip" data-sec="2">2s</button>
+              <button type="button" class="delay-chip modal-delay-chip" data-sec="3">3s</button>
+              <button type="button" class="delay-chip modal-delay-chip" data-sec="5">5s</button>
+            </div>
+            <span class="help-text">Tăng số giây nếu trang web cần thêm thời gian phản hồi trước bước này.</span>
+          </div>
+
+          <div id="modalTimeoutGroup" class="form-group-modal" style="margin-top: 10px;">
+            <label class="section-label">Thời gian tối đa đợi phần tử xuất hiện (giây):</label>
+            <input type="number" id="modalStepTimeout" class="form-input-modal" min="1" max="300" step="1" value="30">
+            <label class="radio-label" style="margin-top: 6px;">
+              <input type="checkbox" id="modalStepOptional">
+              Bước không bắt buộc (không tìm thấy thì bỏ qua, chạy tiếp)
+            </label>
           </div>
         </div>
         <div class="modal-footer">
@@ -331,7 +409,7 @@
 
     <!-- Footer -->
     <footer class="app-footer">
-      <span>AutoFlow v1.0 • Chạy mượt mà không cần quyền Admin</span>
+      <span>AutoFlow v1.1 • Chạy mượt mà không cần quyền Admin</span>
     </footer>
   </div>
 

@@ -1,10 +1,25 @@
 // AutoFlow - Background Service Worker (Manifest V3)
 
+const TAB_STATE_PREFIXES = ['afRec_', 'afRun_', 'afRunPos_'];
+
+// Xóa các trạng thái ghi/chạy dở dang (theo tab) - tránh tự chạy lại ngoài ý muốn
+function clearTabStates(onlyTabId = null) {
+  chrome.storage.local.get(null, (all) => {
+    if (chrome.runtime.lastError || !all) return;
+    const keys = Object.keys(all).filter((k) =>
+      TAB_STATE_PREFIXES.some((p) => k.startsWith(p)) &&
+      (onlyTabId === null || k.endsWith(`_${onlyTabId}`))
+    );
+    if (keys.length > 0) chrome.storage.local.remove(keys);
+  });
+}
+
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('[AutoFlow] Extension đã được cài đặt thành công.');
-  
+  console.log('[AutoFlow] Extension đã được cài đặt / cập nhật thành công.');
+  clearTabStates();
+
   // Khởi tạo kịch bản mẫu nếu chưa có
-  chrome.storage.local.get(['scenarios', 'activeScenarioId'], (result) => {
+  chrome.storage.local.get(['scenarios'], (result) => {
     if (!result.scenarios || Object.keys(result.scenarios).length === 0) {
       const defaultId = 'scenario_demo_1';
       const sampleScenarios = {
@@ -39,26 +54,39 @@ chrome.runtime.onInstalled.addListener(() => {
           ]
         }
       };
-      chrome.storage.local.set({
-        scenarios: sampleScenarios,
-        activeScenarioId: defaultId
-      });
+      chrome.storage.local.set({ scenarios: sampleScenarios, activeScenarioId: defaultId });
     }
   });
 });
 
-// Lắng nghe tin nhắn từ Popup hoặc Content Script
+// Trình duyệt khởi động lại -> Tab ID cũ không còn giá trị
+chrome.runtime.onStartup.addListener(() => clearTabStates());
+
+// Đóng tab -> dọn trạng thái của tab đó
+chrome.tabs.onRemoved.addListener((tabId) => clearTabStates(tabId));
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!message) return false;
+
   if (message.action === 'PING') {
     sendResponse({ status: 'PONG' });
-    return true;
+    return false;
   }
-  
-  // Chuyển tiếp tin nhắn sang active tab nếu cần
+
+  // Content script hỏi Tab ID của chính nó (để lưu trạng thái riêng từng tab)
+  if (message.action === 'GET_TAB_ID') {
+    sendResponse({ tabId: sender.tab ? sender.tab.id : null });
+    return false;
+  }
+
+  // Chuyển tiếp tin nhắn sang tab chỉ định nếu cần
   if (message.target === 'tab' && message.tabId) {
     chrome.tabs.sendMessage(message.tabId, message, (res) => {
+      void chrome.runtime.lastError;
       sendResponse(res);
     });
     return true;
   }
+
+  return false;
 });

@@ -1,6 +1,8 @@
 /* AutoFlow - In-Page Floating Toolbar & Inspector Styles */
 
-:root {
+/* Biến CSS chỉ áp dụng trong phạm vi AutoFlow (không làm ô nhiễm :root của trang web) */
+#autoflow-floating-bar,
+#autoflow-toast {
   --af-bg-dark: rgba(15, 23, 42, 0.94);
   --af-border: rgba(99, 102, 241, 0.3);
   --af-primary: #6366f1;
@@ -218,9 +220,69 @@
 /* Actions Footer */
 .af-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 4px;
 }
+
+.af-actions .af-btn {
+  min-width: calc(50% - 4px);
+}
+
+#af-info-main {
+  word-break: break-word;
+  padding-right: 8px;
+}
+
+.af-badge-error {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  animation: af-pulse 1.2s infinite;
+}
+
+.af-btn-success {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.af-btn-success:hover {
+  background: linear-gradient(135deg, #059669, #047857);
+  transform: translateY(-1px);
+}
+
+/* Toast thông báo (thay cho alert chặn trang) */
+#autoflow-toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translate(-50%, -20px);
+  z-index: 2147483647;
+  max-width: min(520px, calc(100vw - 40px));
+  padding: 12px 18px;
+  border-radius: 12px;
+  font-family: var(--af-font);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: #fff;
+  background: var(--af-bg-dark);
+  border: 1px solid var(--af-border);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+#autoflow-toast.af-toast-show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+#autoflow-toast.af-toast-success { border-color: rgba(16, 185, 129, 0.6); }
+#autoflow-toast.af-toast-warning { border-color: rgba(245, 158, 11, 0.7); }
+#autoflow-toast.af-toast-error { border-color: rgba(239, 68, 68, 0.7); }
 
 .af-btn {
   flex: 1;
