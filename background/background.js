@@ -6,7 +6,7 @@ let activeJobs = {}; // tabId -> job details
 // Khôi phục activeJobs từ storage khi service worker khởi động
 chrome.storage.local.get(['afActiveJobs'], (res) => {
   if (res && res.afActiveJobs && typeof res.afActiveJobs === 'object') {
-    activeJobs = res.afActiveJobs;
+    activeJobs = { ...res.afActiveJobs, ...activeJobs };
     // Kiểm tra xem các tab này còn tồn tại không
     chrome.tabs.query({}, (tabs) => {
       const liveTabIds = new Set(tabs.map((t) => t.id));

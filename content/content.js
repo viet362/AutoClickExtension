@@ -1281,12 +1281,26 @@
   // THAO TÁC MÔ PHỎNG
   // ============================================================
 
+  // Phát sự kiện focus đầy đủ kể cả khi cửa sổ trình duyệt đang mất focus (do mở Popup hoặc hộp thoại Xuất/Nhập file)
+  function ensureElementFocused(el) {
+    if (!el) return;
+    if (typeof el.focus === 'function') {
+      try { el.focus({ preventScroll: true }); } catch (e) { try { el.focus(); } catch (e2) {} }
+    }
+    if (!document.hasFocus()) {
+      try {
+        el.dispatchEvent(new FocusEvent('focusin', { bubbles: true, cancelable: false, view: window }));
+        el.dispatchEvent(new FocusEvent('focus', { bubbles: false, cancelable: false, view: window }));
+      } catch (e) {}
+    }
+  }
+
   // Điền giá trị an toàn cho React / Vue / Angular (input, textarea, select, contenteditable)
   function setValueToInput(el, value) {
     value = value == null ? '' : String(value);
 
     if (el.isContentEditable) {
-      el.focus();
+      ensureElementFocused(el);
       try {
         document.execCommand('selectAll', false, null);
         document.execCommand('insertText', false, value);
@@ -1315,7 +1329,7 @@
       if (inner) return setValueToInput(inner, value);
     }
 
-    el.focus?.();
+    ensureElementFocused(el);
     const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
     try {
       if (setter) setter.call(el, value);
@@ -1371,9 +1385,7 @@
     el.dispatchEvent(new MouseEvent('mousedown', { ...base, buttons: 1 }));
 
     const focusTarget = el.closest('button, a, input, select, textarea, [tabindex]') || el;
-    if (typeof focusTarget.focus === 'function') {
-      try { focusTarget.focus({ preventScroll: true }); } catch (e) {}
-    }
+    ensureElementFocused(focusTarget);
 
     el.dispatchEvent(new PointerEvent('pointerup', ptr));
     el.dispatchEvent(new MouseEvent('mouseup', base));
@@ -1419,9 +1431,7 @@
       view: window
     };
 
-    if (typeof el.focus === 'function') {
-      try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
-    }
+    ensureElementFocused(el);
 
     el.dispatchEvent(new KeyboardEvent('keydown', init));
     if (key === 'Enter') {
@@ -1486,15 +1496,18 @@
       if (found && (isElementVisible(found) || found.offsetParent !== null)) return found;
 
       const now = Date.now();
-      if (!isPaused) elapsed += now - last;
+      // Giới hạn bước nhảy thời gian tối đa 300ms mỗi chu kỳ quét để khi hộp thoại Xuất/Nhập file của hệ điều hành
+      // hoặc alert làm ngưng trệ luồng trình duyệt, kịch bản đang chạy không bị tính lố vào timeout và dừng đột ngột
+      const delta = Math.min(Math.max(0, now - last), 300);
+      if (!isPaused) elapsed += delta;
       last = now;
 
       // CƠ CHẾ TỰ ĐỘNG PHỤC HỒI POPUP & DATEPICKER (SELF-HEALING):
-      // Nếu bước hiện tại đợi nút bấm (hoặc thông tin / lịch) mà sau 1s chưa thấy:
-      // Kích hoạt lại ô bấm trước đó (lặp lại định kỳ mỗi 2.5s nếu vẫn chưa thấy)
-      if (elapsed > 1000 && lastClickedTrigger && lastClickedTrigger.el && lastClickedTrigger.el.isConnected) {
+      // Nếu bước hiện tại đợi nút bấm (hoặc thông tin / lịch) mà sau 800ms chưa thấy:
+      // Kích hoạt lại ô bấm trước đó (lặp lại định kỳ mỗi 2s nếu vẫn chưa thấy)
+      if (elapsed > 800 && lastClickedTrigger && lastClickedTrigger.el && lastClickedTrigger.el.isConnected) {
         const lastRetrigger = lastClickedTrigger.lastRetrigger || lastClickedTrigger.timestamp;
-        if (now - lastRetrigger >= 2500) {
+        if (now - lastRetrigger >= 2000) {
           lastClickedTrigger.lastRetrigger = now;
           setInfoMain(`[Dòng ${absRow(currentRunIndex)} • Bước ${ctx.stepNum}/${ctx.totalSteps}] Kích hoạt lại ô chọn ngày / thông tin...`);
           simulateClick(lastClickedTrigger.el);
@@ -1566,11 +1579,15 @@
   const LOADING_SELECTORS = '.el-loading-mask, .ant-spin-spinning, .v-overlay--active, .loading-overlay, .loading-mask';
 
   async function waitForPageIdle(token, speed) {
-    // 1. Chờ các lớp "đang tải" phổ biến biến mất (tối đa 15s)
-    const start = Date.now();
-    while (isAlive(token) && Date.now() - start < 15000) {
+    // 1. Chờ các lớp "đang tải" phổ biến biến mất (tối đa 15s, không tính thời gian hộp thoại file làm treo luồng)
+    let elapsed = 0;
+    let last = Date.now();
+    while (isAlive(token) && elapsed < 15000) {
       const busy = queryAllSafe(LOADING_SELECTORS).some((el) => isElementVisible(el));
       if (!busy) break;
+      const now = Date.now();
+      elapsed += Math.min(Math.max(0, now - last), 400);
+      last = now;
       setInfoMain(`[Dòng ${absRow(currentRunIndex)}] Trang đang tải dữ liệu, vui lòng chờ...`);
       await sleep(200);
     }
@@ -1655,15 +1672,29 @@
       await waitWhilePaused(token);
       if (!isAlive(token)) return { ok: false, aborted: true };
 
-      // Phần tử có thể bị framework render lại trong lúc chờ -> tìm lại
-      if (!target.isConnected) {
+      // Phần tử có thể bị framework render lại hoặc bị ẩn đi (do mở Popup / hộp thoại Xuất Nhập file làm mất focus) -> tự động mở lại & tìm lại
+      if (!target.isConnected || !isElementVisible(target)) {
         let stepTargetText = (step.description || '').match(/["'“]([^"'“”]+)["'”]/)?.[1]?.trim() || '';
         if (!stepTargetText) {
           const m = (step.description || '').match(/(?:ngày|ô|chọn|click|bước|\s)\s*([1-9]|[12]\d|3[01])\b/i);
           if (m) stepTargetText = m[1].trim();
         }
         target = findElement(selector, stepTargetText);
-        if (!target) return { ok: false, error: 'Phần tử biến mất trước khi kịp thao tác' };
+        if (!target || !isElementVisible(target)) {
+          if (lastClickedTrigger && lastClickedTrigger.el && lastClickedTrigger.el.isConnected) {
+            simulateClick(lastClickedTrigger.el);
+            await smartSleep(250, token);
+          }
+          target = await waitForElement(selector, timeout, { ...ctx, label: step.description });
+          if (!isAlive(token)) return { ok: false, aborted: true };
+        }
+        if (!target) {
+          if (step.optional) {
+            ctx.onActionDone();
+            return { ok: true, skipped: true };
+          }
+          return { ok: false, error: 'Phần tử biến mất trước khi kịp thao tác' };
+        }
       }
 
       if (step.type === 'click') {
@@ -1988,6 +2019,11 @@
 
   window.addEventListener('pagehide', handlePageHide, true);
   window.addEventListener('beforeunload', handlePageHide, true);
+  window.addEventListener('focus', () => {
+    if (isRunning && lastClickedTrigger) {
+      lastClickedTrigger.lastRetrigger = 0;
+    }
+  }, true);
 
   // ============================================================
   // GIAO TIẾP VỚI POPUP & BACKGROUND / DASHBOARD

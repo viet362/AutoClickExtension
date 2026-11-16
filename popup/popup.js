@@ -1082,6 +1082,31 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   let isTabRecording = false;
+  let isTabRunning = false;
+
+  // Thông báo nổi không gây chặn luồng (Non-blocking Toast) để không làm đơ các tab đang chạy kịch bản
+  let popupToastTimer = null;
+  function showPopupToast(message, type = 'success', duration = 4000) {
+    let toast = document.getElementById('afPopupToast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'afPopupToast';
+      toast.style.cssText = 'position: fixed; bottom: 14px; left: 14px; right: 14px; z-index: 99999; padding: 10px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600; line-height: 1.4; color: #fff; box-shadow: 0 10px 25px rgba(0,0,0,0.45); transition: opacity 0.2s ease, transform 0.2s ease; pointer-events: none; white-space: pre-line;';
+      document.body.appendChild(toast);
+    }
+    toast.style.background = type === 'error'
+      ? 'linear-gradient(135deg, #dc2626, #991b1b)'
+      : 'linear-gradient(135deg, #059669, #047857)';
+    toast.style.border = type === 'error' ? '1px solid #f87171' : '1px solid #34d399';
+    toast.textContent = message;
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0)';
+    clearTimeout(popupToastTimer);
+    popupToastTimer = setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(6px)';
+    }, duration);
+  }
 
   // Helper: khởi động ghi vào một kịch bản với chế độ 'overwrite' hoặc 'append'
   function launchRecording(tab, scenarioId, scenarioName, mode = 'overwrite') {
@@ -1764,6 +1789,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (msg.action === 'EXECUTION_PROGRESS') {
+      isTabRunning = true;
       btnStartRunner.style.display = 'none';
       btnStopRunner.style.display = 'flex';
       runProgressBox.style.display = 'block';
@@ -1789,6 +1815,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setHeaderStatus('running', 'Đang chạy');
       }
     } else if (msg.action === 'EXECUTION_COMPLETED') {
+      isTabRunning = false;
       btnStartRunner.style.display = 'flex';
       btnStopRunner.style.display = 'none';
       progressPctText.textContent = '100%';
@@ -1832,6 +1859,7 @@ document.addEventListener('DOMContentLoaded', () => {
       chrome.tabs.sendMessage(tab.id, { action: 'GET_STATUS' }, (st) => {
         if (chrome.runtime.lastError || !st) {
           isTabRecording = false;
+          isTabRunning = false;
           btnStartRunner.style.display = 'flex';
           btnStopRunner.style.display = 'none';
           runProgressBox.style.display = 'none';
@@ -1840,6 +1868,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (st.isRecording) {
           isTabRecording = true;
+          isTabRunning = false;
           setHeaderStatus('recording', `Đang ghi (${st.recordedCount} bước)`);
           btnStartRecord.innerHTML = `<span class="record-dot"></span> 💾 Dừng & Lưu (${st.recordedCount} bước)`;
           return;
@@ -1849,6 +1878,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btnStartRecord.innerHTML = '<span class="record-dot"></span> Bắt đầu ghi mẫu';
 
         if (!st.isRunning) {
+          isTabRunning = false;
           // Tab hiện tại đang rảnh (Idle), hiển thị nút Bắt đầu chạy bình thường
           btnStartRunner.style.display = 'flex';
           btnStopRunner.style.display = 'none';
@@ -1868,6 +1898,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (st.isRunning) {
+          isTabRunning = true;
           setHeaderStatus(st.hasError ? 'error' : st.isPaused ? 'paused' : 'running', st.isPaused ? 'Tạm dừng' : 'Đang chạy');
           btnStartRunner.style.display = 'none';
           btnStopRunner.style.display = 'flex';
@@ -1943,10 +1974,27 @@ document.addEventListener('DOMContentLoaded', () => {
   // 8. CÀI ĐẶT: XUẤT / NHẬP KỊCH BẢN JSON (TỪNG KỊCH BẢN & BẢO VỆ DỮ LIỆU CŨ)
   // ============================================================
 
+  // Tải file JSON xuống máy bằng Blob URL an toàn, không làm gián đoạn kịch bản đang chạy
+  function triggerJsonDownload(dataObj, fileName) {
+    const jsonStr = JSON.stringify(dataObj, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const dlAnchor = document.createElement('a');
+    dlAnchor.style.display = 'none';
+    dlAnchor.href = url;
+    dlAnchor.download = fileName;
+    document.body.appendChild(dlAnchor);
+    dlAnchor.click();
+    setTimeout(() => {
+      dlAnchor.remove();
+      URL.revokeObjectURL(url);
+    }, 3000);
+  }
+
   // Xuất 1 kịch bản đơn lẻ ra file JSON riêng
   function exportSingleScenario(scenario) {
     if (!scenario) {
-      alert('Vui lòng chọn kịch bản bạn muốn xuất!');
+      showPopupToast('⚠️ Vui lòng chọn kịch bản bạn muốn xuất!', 'error');
       return;
     }
     const cleanFileName = (scenario.name || 'kich_ban')
@@ -1964,21 +2012,19 @@ document.addEventListener('DOMContentLoaded', () => {
         createdAt: scenario.createdAt || new Date().toISOString(),
         updatedAt: scenario.updatedAt || new Date().toISOString(),
         steps: Array.isArray(scenario.steps) ? scenario.steps : [],
-        attachedFileName: scenario.attachedFileName || null
+        attachedFileName: scenario.attachedFileName || null,
+        attachedDataset: Array.isArray(scenario.attachedDataset) ? scenario.attachedDataset : undefined
       }
     };
 
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(singleData, null, 2));
-    const dlAnchor = document.createElement('a');
-    dlAnchor.setAttribute('href', dataStr);
-    dlAnchor.setAttribute('download', `autoflow_${cleanFileName}.json`);
-    dlAnchor.click();
+    triggerJsonDownload(singleData, `autoflow_${cleanFileName}.json`);
+    showPopupToast(`📤 Đã xuất kịch bản "${scenario.name}"!`);
   }
 
   // Xuất toàn bộ kịch bản ra 1 file JSON sao lưu
   function exportAllScenarios() {
     if (!scenarios || Object.keys(scenarios).length === 0) {
-      alert('Chưa có kịch bản nào để xuất!');
+      showPopupToast('⚠️ Chưa có kịch bản nào để xuất!', 'error');
       return;
     }
     const bundleData = {
@@ -1988,11 +2034,8 @@ document.addEventListener('DOMContentLoaded', () => {
       total: Object.keys(scenarios).length,
       scenarios: scenarios
     };
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(bundleData, null, 2));
-    const dlAnchor = document.createElement('a');
-    dlAnchor.setAttribute('href', dataStr);
-    dlAnchor.setAttribute('download', `autoflow_all_scenarios_${Date.now()}.json`);
-    dlAnchor.click();
+    triggerJsonDownload(bundleData, `autoflow_all_scenarios_${Date.now()}.json`);
+    showPopupToast(`📤 Đã xuất toàn bộ ${Object.keys(scenarios).length} kịch bản!`);
   }
 
   // Gắn sự kiện xuất kịch bản
@@ -2071,7 +2114,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!file) return;
 
       const reader = new FileReader();
-      reader.onload = (ev) => {
+      reader.onload = async (ev) => {
         try {
           const rawText = ev.target.result;
           let parsed;
@@ -2084,6 +2127,14 @@ document.addEventListener('DOMContentLoaded', () => {
           const extracted = extractScenariosFromImport(parsed);
           if (!extracted || extracted.length === 0) {
             throw new Error('Không tìm thấy kịch bản hợp lệ nào trong file JSON đã chọn.');
+          }
+
+          // Đồng bộ lại danh sách kịch bản mới nhất từ storage trước khi gộp để tránh ghi đè
+          const latestStorage = await new Promise((resolve) => {
+            chrome.storage.local.get(['scenarios', 'activeScenarioId'], (r) => resolve(r || {}));
+          });
+          if (latestStorage.scenarios && typeof latestStorage.scenarios === 'object') {
+            scenarios = { ...latestStorage.scenarios, ...scenarios };
           }
 
           let addedCount = 0;
@@ -2134,22 +2185,25 @@ document.addEventListener('DOMContentLoaded', () => {
             importedNames.push(finalName);
           });
 
-          // Tự động chọn kịch bản vừa nhập để người dùng nhìn thấy ngay
-          if (lastAddedId) {
+          // Nếu tab hiện tại KHÔNG đang chạy kịch bản thì mới chuyển sang kịch bản vừa nhập;
+          // Nếu đang chạy kịch bản, giữ nguyên activeScenarioId và dữ liệu của kịch bản đang chạy để không làm gián đoạn!
+          if (lastAddedId && !isTabRunning) {
             activeScenarioId = lastAddedId;
           }
 
-          saveScenarios();
+          await saveScenarios();
           renderScenarioDropdown();
-          renderStepsList();
-          checkScenarioAttachedData();
-          updateRunnerCard();
+          if (!isTabRunning) {
+            renderStepsList();
+            checkScenarioAttachedData();
+            updateRunnerCard();
+          }
 
-          const nameList = importedNames.slice(0, 5).map((n) => `• ${n}`).join('\n');
-          const moreText = importedNames.length > 5 ? `\n... và ${importedNames.length - 5} kịch bản khác` : '';
-          alert(`🎉 Đã nhập thành công ${addedCount} kịch bản (toàn bộ kịch bản cũ được giữ nguyên vẹn 100%):\n\n${nameList}${moreText}`);
+          const nameList = importedNames.slice(0, 4).map((n) => `• ${n}`).join('\n');
+          const moreText = importedNames.length > 4 ? `\n... và ${importedNames.length - 4} kịch bản khác` : '';
+          showPopupToast(`🎉 Đã nhập thêm ${addedCount} kịch bản (kịch bản đang có & đang chạy được giữ nguyên):\n${nameList}${moreText}`, 'success', 4500);
         } catch (err) {
-          alert('⚠️ Lỗi khi nhập kịch bản: ' + err.message);
+          showPopupToast('⚠️ Lỗi khi nhập kịch bản: ' + err.message, 'error', 5000);
         } finally {
           importJsonInput.value = '';
         }
