@@ -38,13 +38,27 @@
   }
 
   function storageSet(obj) {
-    if (!isContextValid()) return;
-    try { chrome.storage.local.set(obj, () => void chrome.runtime.lastError); } catch (e) {}
+    return new Promise((resolve) => {
+      if (!isContextValid()) return resolve();
+      try {
+        chrome.storage.local.set(obj, () => {
+          void chrome.runtime.lastError;
+          resolve();
+        });
+      } catch (e) { resolve(); }
+    });
   }
 
   function storageRemove(keys) {
-    if (!isContextValid()) return;
-    try { chrome.storage.local.remove(keys, () => void chrome.runtime.lastError); } catch (e) {}
+    return new Promise((resolve) => {
+      if (!isContextValid()) return resolve();
+      try {
+        chrome.storage.local.remove(keys, () => {
+          void chrome.runtime.lastError;
+          resolve();
+        });
+      } catch (e) { resolve(); }
+    });
   }
 
   function safeSendMessage(msg) {
@@ -794,7 +808,7 @@
     persistRecording();
   }
 
-  function stopRecording(save = true) {
+  async function stopRecording(save = true) {
     commitPendingType();
     isRecording = false;
 
@@ -811,36 +825,38 @@
     recordedSteps = [];
 
     if (save && steps.length > 0) {
-      storageGet(['scenarios', 'activeScenarioId']).then((res) => {
-        const scenarios = res.scenarios || {};
-        const targetId = currentRecordingScenarioId || res.activeScenarioId || `scenario_${Date.now()}`;
+      const res = await storageGet(['scenarios', 'activeScenarioId']);
+      const scenarios = res.scenarios || {};
+      const targetId = currentRecordingScenarioId || res.activeScenarioId || `scenario_${Date.now()}`;
 
-        if (scenarios[targetId]) {
-          if (currentRecordingMode === 'append') {
-            const prevSteps = Array.isArray(scenarios[targetId].steps) ? scenarios[targetId].steps : [];
-            scenarios[targetId].steps = prevSteps.concat(steps);
-            showToast(`✅ Đã nối tiếp ${steps.length} bước mới (tổng ${scenarios[targetId].steps.length} bước) vào "${scenarios[targetId].name}".`, 'success', 6000);
-          } else {
-            scenarios[targetId].steps = steps;
-            showToast(`✅ Đã lưu ${steps.length} bước vào "${scenarios[targetId].name}". Mở AutoFlow để gán cột Excel.`, 'success', 6000);
-          }
-          scenarios[targetId].updatedAt = new Date().toISOString();
+      if (scenarios[targetId]) {
+        if (currentRecordingMode === 'append') {
+          const prevSteps = Array.isArray(scenarios[targetId].steps) ? scenarios[targetId].steps : [];
+          scenarios[targetId].steps = prevSteps.concat(steps);
+          showToast(`✅ Đã nối tiếp ${steps.length} bước mới (tổng ${scenarios[targetId].steps.length} bước) vào "${scenarios[targetId].name}".`, 'success', 6000);
         } else {
-          scenarios[targetId] = {
-            id: targetId,
-            name: currentRecordingScenarioName || `Kịch bản ${new Date().toLocaleDateString('vi-VN')} ${new Date().toLocaleTimeString('vi-VN')}`,
-            createdAt: new Date().toISOString(),
-            steps
-          };
+          scenarios[targetId].steps = steps;
           showToast(`✅ Đã lưu ${steps.length} bước vào "${scenarios[targetId].name}". Mở AutoFlow để gán cột Excel.`, 'success', 6000);
         }
-        updateFloatingBarUI();
-      });
-    } else if (save) {
-      showToast('Chưa ghi được bước nào nên không có gì để lưu.', 'warning');
-    }
+        scenarios[targetId].updatedAt = new Date().toISOString();
+      } else {
+        scenarios[targetId] = {
+          id: targetId,
+          name: currentRecordingScenarioName || `Kịch bản ${new Date().toLocaleDateString('vi-VN')} ${new Date().toLocaleTimeString('vi-VN')}`,
+          createdAt: new Date().toISOString(),
+          steps
+        };
+        showToast(`✅ Đã lưu ${steps.length} bước vào "${scenarios[targetId].name}". Mở AutoFlow để gán cột Excel.`, 'success', 6000);
+      }
 
-    updateFloatingBarUI();
+      await storageSet({ scenarios, activeScenarioId: targetId });
+      updateFloatingBarUI();
+    } else if (save) {
+      showToast('⚠️ Chưa ghi được bước nào nên không có gì để lưu.', 'error');
+      updateFloatingBarUI();
+    } else {
+      updateFloatingBarUI();
+    }
   }
 
   // ============================================================
@@ -1989,9 +2005,10 @@
         sendResponse({ status: 'RECORDING_STARTED' });
         break;
       case 'STOP_RECORDING':
-        stopRecording(msg.save);
-        sendResponse({ status: 'RECORDING_STOPPED' });
-        break;
+        stopRecording(msg.save).then(() => {
+          sendResponse({ status: 'RECORDING_STOPPED' });
+        });
+        return true;
       case 'START_EXECUTION':
         startExecution(msg.scenario, msg.dataset, msg.options || {});
         sendResponse({ status: 'EXECUTION_STARTED' });
@@ -2019,6 +2036,8 @@
           isPaused,
           hasError: !!errorState,
           recordedCount: recordedSteps.length,
+          recordingScenarioId: currentRecordingScenarioId,
+          recordingScenarioName: currentRecordingScenarioName,
           currentRunIndex,
           totalRows: currentDataset.length,
           rowOffset: runOptions.rowOffset,

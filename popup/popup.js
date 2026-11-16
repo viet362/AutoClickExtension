@@ -251,9 +251,9 @@ document.addEventListener('DOMContentLoaded', () => {
         scenarios = res.scenarios || {};
         activeScenarioId = res.activeScenarioId || Object.keys(scenarios)[0] || null;
 
-        if (!scenarios[activeScenarioId] || (scenarios[activeScenarioId].steps && scenarios[activeScenarioId].steps.length === 0)) {
+        if (!activeScenarioId || !scenarios[activeScenarioId]) {
           const withSteps = Object.keys(scenarios).find((k) => scenarios[k].steps && scenarios[k].steps.length > 0);
-          if (withSteps) activeScenarioId = withSteps;
+          activeScenarioId = withSteps || Object.keys(scenarios)[0] || null;
         }
 
         excelFiles = res.excelFiles || {};
@@ -307,7 +307,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function saveScenarios() {
-    chrome.storage.local.set({ scenarios, activeScenarioId });
+    return new Promise((resolve) => {
+      chrome.storage.local.set({ scenarios, activeScenarioId }, () => {
+        void chrome.runtime.lastError;
+        resolve();
+      });
+    });
   }
 
   function checkScenarioAttachedData() {
@@ -1076,6 +1081,8 @@ document.addEventListener('DOMContentLoaded', () => {
     return true;
   }
 
+  let isTabRecording = false;
+
   // Helper: khởi động ghi vào một kịch bản với chế độ 'overwrite' hoặc 'append'
   function launchRecording(tab, scenarioId, scenarioName, mode = 'overwrite') {
     chrome.tabs.sendMessage(
@@ -1098,6 +1105,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   btnStartRecord.addEventListener('click', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (isTabRecording && tab && tab.id) {
+      chrome.tabs.sendMessage(tab.id, { action: 'STOP_RECORDING', save: true }, () => {
+        void chrome.runtime.lastError;
+        isTabRecording = false;
+        btnStartRecord.innerHTML = '<span class="record-dot"></span> Bắt đầu ghi mẫu';
+        loadState();
+      });
+      return;
+    }
+
     const ready = await ensureTabReady(tab);
     if (!ready) return;
 
@@ -1110,7 +1127,7 @@ document.addEventListener('DOMContentLoaded', () => {
         steps: []
       };
       activeScenarioId = newId;
-      saveScenarios();
+      await saveScenarios();
       renderScenarioDropdown();
       renderStepsList();
       updateRunnerCard();
@@ -1150,7 +1167,7 @@ document.addEventListener('DOMContentLoaded', () => {
         steps: []
       };
       activeScenarioId = newId;
-      saveScenarios();
+      await saveScenarios();
       renderScenarioDropdown();
       renderStepsList();
       updateRunnerCard();
@@ -1813,7 +1830,25 @@ document.addEventListener('DOMContentLoaded', () => {
       currentActiveTabId = tab.id;
 
       chrome.tabs.sendMessage(tab.id, { action: 'GET_STATUS' }, (st) => {
-        if (chrome.runtime.lastError || !st || !st.isRunning) {
+        if (chrome.runtime.lastError || !st) {
+          isTabRecording = false;
+          btnStartRunner.style.display = 'flex';
+          btnStopRunner.style.display = 'none';
+          runProgressBox.style.display = 'none';
+          return;
+        }
+
+        if (st.isRecording) {
+          isTabRecording = true;
+          setHeaderStatus('recording', `Đang ghi (${st.recordedCount} bước)`);
+          btnStartRecord.innerHTML = `<span class="record-dot"></span> 💾 Dừng & Lưu (${st.recordedCount} bước)`;
+          return;
+        }
+
+        isTabRecording = false;
+        btnStartRecord.innerHTML = '<span class="record-dot"></span> Bắt đầu ghi mẫu';
+
+        if (!st.isRunning) {
           // Tab hiện tại đang rảnh (Idle), hiển thị nút Bắt đầu chạy bình thường
           btnStartRunner.style.display = 'flex';
           btnStopRunner.style.display = 'none';
@@ -1832,9 +1867,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
 
-        if (st.isRecording) {
-          setHeaderStatus('recording', `Đang ghi (${st.recordedCount})`);
-        } else if (st.isRunning) {
+        if (st.isRunning) {
           setHeaderStatus(st.hasError ? 'error' : st.isPaused ? 'paused' : 'running', st.isPaused ? 'Tạm dừng' : 'Đang chạy');
           btnStartRunner.style.display = 'none';
           btnStopRunner.style.display = 'flex';
