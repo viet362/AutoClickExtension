@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "AutoFlow - Macro & Excel Web Automator",
-  "version": "1.1.0",
-  "description": "Tự động ghi nhớ kịch bản click chuột, gõ phím và lặp dữ liệu từ file Excel trên trình duyệt hoàn toàn không cần quyền Admin.",
+  "name": "AutoFlow - Macro & Excel Web Automator (Multi-Tab Edition)",
+  "version": "1.2.0",
+  "description": "Tự động hóa click chuột, gõ phím, lặp Excel trên trình duyệt.",
   "permissions": [
     "storage",
     "unlimitedStorage",
@@ -32,9 +32,15 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content/content.js"],
-      "css": ["content/content.css"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content/content.js"
+      ],
+      "css": [
+        "content/content.css"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }

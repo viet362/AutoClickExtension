@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>AutoFlow - Trung Tâm Điều Khiển Đa Luồng (Multi-Tab Dashboard)</title>
+  <link rel="stylesheet" href="dashboard.css">
+  <script src="../libs/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div class="dash-app">
+    <!-- Top Bar -->
+    <header class="dash-topbar">
+      <div class="dash-brand">
+        <div class="dash-logo">⚡</div>
+        <div class="dash-titles">
+          <h1 class="dash-title">AutoFlow Control Center</h1>
+          <span class="dash-subtitle">Trung tâm quản lý tự động hóa Đa Luồng, Đa Tab & Đa Cửa Sổ</span>
+        </div>
+      </div>
+
+      <!-- Quick Metrics -->
+      <div class="dash-metrics">
+        <div class="metric-card metric-running">
+          <span class="metric-num" id="metricRunning">0</span>
+          <span class="metric-label">🟢 Đang chạy</span>
+        </div>
+        <div class="metric-card metric-paused">
+          <span class="metric-num" id="metricPaused">0</span>
+          <span class="metric-label">⏸️ Tạm dừng</span>
+        </div>
+        <div class="metric-card metric-error">
+          <span class="metric-num" id="metricError">0</span>
+          <span class="metric-label">🔴 Gặp lỗi</span>
+        </div>
+        <div class="metric-card metric-completed">
+          <span class="metric-num" id="metricCompleted">0</span>
+          <span class="metric-label">✅ Hoàn thành</span>
+        </div>
+      </div>
+
+      <!-- Global Actions -->
+      <div class="dash-global-actions">
+        <button class="btn btn-secondary" id="btnPauseAll" title="Tạm dừng tất cả các tab đang chạy">⏸️ Tạm dừng tất cả</button>
+        <button class="btn btn-secondary" id="btnResumeAll" title="Tiếp tục tất cả các tab đang tạm dừng">▶️ Tiếp tục tất cả</button>
+        <button class="btn btn-danger" id="btnStopAll" title="Dừng khẩn cấp toàn bộ các tab">⏹️ Dừng tất cả</button>
+        <button class="btn btn-success" id="btnExportMergedReport" title="Tải file Excel tổng hợp kết quả của tất cả các tab">📊 Xuất báo cáo tổng hợp</button>
+      </div>
+    </header>
+
+    <!-- Main Content Grid -->
+    <main class="dash-main">
+      <!-- Section 1: Launcher Card (Khởi chạy đa luồng) -->
+      <section class="dash-card launcher-card">
+        <div class="card-header">
+          <div class="card-header-left">
+            <span class="card-icon">🚀</span>
+            <h2 class="card-title">Khởi chạy Đa Luồng Song Song (Multi-Tab Runner)</h2>
+          </div>
+          <span class="badge badge-accent">Tăng tốc độ gấp N lần</span>
+        </div>
+        <div class="card-body">
+          <div class="launcher-grid">
+            <!-- Cột 1: Kịch bản & Dữ liệu -->
+            <div class="launcher-col">
+              <div class="form-group">
+                <label class="form-label">1. Chọn kịch bản làm việc:</label>
+                <select id="launchScenarioSelect" class="form-select"></select>
+              </div>
+
+              <div class="form-group">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <label class="form-label">2. Nguồn dữ liệu Excel:</label>
+                  <span id="excelSourceBadge" class="source-badge">Đang tải...</span>
+                </div>
+                <div class="excel-attach-box">
+                  <div class="excel-info-row">
+                    <span id="dashExcelInfo" style="font-weight: 600; color: #38bdf8;">Chưa nạp file Excel</span>
+                    <button class="btn btn-secondary btn-xs" id="btnBrowseExcelFile">📂 Nạp file mới</button>
+                    <input type="file" id="dashExcelFileInput" accept=".xlsx, .xls, .csv" style="display: none;">
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">3. URL trang web mục tiêu:</label>
+                <div style="display: flex; gap: 8px;">
+                  <input type="url" id="targetUrlInput" class="form-input" placeholder="https://..." value="https://">
+                  <button class="btn btn-secondary btn-sm" id="btnGetActiveTabUrl" title="Lấy địa chỉ web từ tab bạn vừa mở">Lấy URL hiện tại</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Cột 2: Cấu hình Phân Phối Luồng -->
+            <div class="launcher-col">
+              <div class="form-group">
+                <label class="form-label">4. Số lượng Luồng (Tabs / Cửa sổ chạy cùng lúc):</label>
+                <div class="worker-chips-row">
+                  <button type="button" class="worker-chip" data-workers="2">2 Luồng</button>
+                  <button type="button" class="worker-chip active" data-workers="3">3 Luồng</button>
+                  <button type="button" class="worker-chip" data-workers="4">4 Luồng</button>
+                  <button type="button" class="worker-chip" data-workers="5">5 Luồng</button>
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 12px; color: #94a3b8;">Tùy chỉnh:</span>
+                    <input type="number" id="workerCountInput" class="form-input" value="3" min="1" max="20" style="width: 55px; text-align: center; font-weight: 700; color: #38bdf8;">
+                  </div>
+                </div>
+              </div>
+
+              <!-- Tính toán phân bổ dữ liệu -->
+              <div class="distribution-preview" id="distributionPreview">
+                <div class="preview-title">📊 Dự kiến phân bổ công việc:</div>
+                <div class="preview-desc" id="distributionDesc">Nạp file Excel để xem dự kiến phân bổ cho các tab.</div>
+              </div>
+
+              <div class="form-group" style="margin-top: 10px;">
+                <label class="form-label">5. Môi trường chạy:</label>
+                <div class="radio-row">
+                  <label class="radio-label">
+                    <input type="radio" name="dashRunEnv" value="windows" checked>
+                    <span><strong>Mở các CỬA SỔ RIÊNG (Khuyên dùng)</strong> - Không bị Chrome ngủ đông, tối đa tốc độ</span>
+                  </label>
+                  <label class="radio-label">
+                    <input type="radio" name="dashRunEnv" value="tabs">
+                    <span>Mở các TAB trong cửa sổ này</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="form-row" style="margin-top: 10px;">
+                <div class="form-group" style="flex: 1;">
+                  <label class="form-label">Delay mỗi bước (giây):</label>
+                  <input type="number" id="dashExtraDelay" class="form-input" value="0.5" min="0" max="60" step="0.5">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                  <label class="form-label">Lặp lại kịch bản:</label>
+                  <input type="number" id="dashRepeatCount" class="form-input" value="1" min="1" max="999">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                  <label class="form-label">Xử lý khi lỗi:</label>
+                  <select id="dashErrorMode" class="form-select">
+                    <option value="stop">Dừng lại hỏi</option>
+                    <option value="skip">Bỏ qua chạy tiếp</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Nút kích hoạt lớn -->
+          <div class="launcher-actions">
+            <button class="btn btn-primary btn-lg" id="btnLaunchParallel">
+              🚀 BẮT ĐẦU CHẠY ĐA LUỒNG SONG SONG
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 2: Worker Monitor Grid (Giám sát các tab đang chạy) -->
+      <section class="dash-card monitor-card">
+        <div class="card-header">
+          <div class="card-header-left">
+            <span class="card-icon">🖥️</span>
+            <h2 class="card-title">Giám sát Các Luồng Đang Chạy (Live Worker Monitor)</h2>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-secondary btn-sm" id="btnRefreshJobs">🔄 Làm mới</button>
+            <button class="btn btn-secondary btn-sm" id="btnClearFinishedJobs">🧹 Dọn danh sách đã xong</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="workers-grid" id="workersGridContainer">
+            <!-- Các thẻ worker tab được render tự động -->
+            <div class="empty-workers">
+              <div class="empty-icon">⚡</div>
+              <div class="empty-text">Chưa có luồng nào đang chạy.</div>
+              <div class="empty-sub">Hãy chọn kịch bản ở trên rồi bấm "Bắt đầu chạy đa luồng" hoặc chạy kịch bản từ Popup trên các tab.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>
+

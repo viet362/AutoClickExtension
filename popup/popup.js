@@ -10,6 +10,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Scenarios Tab
   const scenarioSelect = document.getElementById('scenarioSelect');
   const btnRenameScenario = document.getElementById('btnRenameScenario');
+  const btnChainScenarios = document.getElementById('btnChainScenarios');
+  const btnExportScenario = document.getElementById('btnExportScenario');
   const btnNewScenario = document.getElementById('btnNewScenario');
   const btnDeleteScenario = document.getElementById('btnDeleteScenario');
   const btnStartRecord = document.getElementById('btnStartRecord');
@@ -27,6 +29,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const excelDropzone = document.getElementById('excelDropzone');
   const excelFileInput = document.getElementById('excelFileInput');
   const btnBrowseFile = document.getElementById('btnBrowseFile');
+  const excelFilesBar = document.getElementById('excelFilesBar');
+  const excelFileSelect = document.getElementById('excelFileSelect');
+  const btnUploadAnotherFile = document.getElementById('btnUploadAnotherFile');
+  const btnDeleteSelectedFile = document.getElementById('btnDeleteSelectedFile');
+  const btnChangeFile = document.getElementById('btnChangeFile');
+  const compactDropzone = document.getElementById('compactDropzone');
+  const tabData = document.getElementById('tab-data');
   const dataPreviewCard = document.getElementById('dataPreviewCard');
   const previewFileName = document.getElementById('previewFileName');
   const previewFileStats = document.getElementById('previewFileStats');
@@ -35,8 +44,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const previewTableBody = document.getElementById('previewTableBody');
   const btnClearData = document.getElementById('btnClearData');
   const dataRowsBadge = document.getElementById('dataRowsBadge');
+  const excelScopeText = document.getElementById('excelScopeText');
+  const btnAttachToScenario = document.getElementById('btnAttachToScenario');
+  const btnDetachFromScenario = document.getElementById('btnDetachFromScenario');
 
-  // Runner Tab
+  // Runner Tab & Dashboard shortcuts
+  const btnOpenDashboard = document.getElementById('btnOpenDashboard');
+  const btnOpenDashboardFromRunner = document.getElementById('btnOpenDashboardFromRunner');
   const runnerScenarioName = document.getElementById('runnerScenarioName');
   const runnerDataInfo = document.getElementById('runnerDataInfo');
   const runStartRow = document.getElementById('runStartRow');
@@ -55,10 +69,33 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnExportResults = document.getElementById('btnExportResults');
   const btnClearLogs = document.getElementById('btnClearLogs');
 
+  // Chaining modal elements
+  const chainScenariosModal = document.getElementById('chainScenariosModal');
+  const btnChainModalClose = document.getElementById('btnChainModalClose');
+  const btnChainModalCancel = document.getElementById('btnChainModalCancel');
+  const btnChainModalConfirm = document.getElementById('btnChainModalConfirm');
+  const chainScenariosList = document.getElementById('chainScenariosList');
+  const chainNewNameInput = document.getElementById('chainNewNameInput');
+  const chainWaitSecInput = document.getElementById('chainWaitSecInput');
+
+  // Record Confirm Modal elements (Bảo vệ kịch bản cũ khi ghi)
+  const recordConfirmModal = document.getElementById('recordConfirmModal');
+  const btnRecordModalClose = document.getElementById('btnRecordModalClose');
+  const btnRecordCancel = document.getElementById('btnRecordCancel');
+  const recordTargetScenarioName = document.getElementById('recordTargetScenarioName');
+  const recordTargetStepsCount = document.getElementById('recordTargetStepsCount');
+  const recordNewScenarioNameInput = document.getElementById('recordNewScenarioNameInput');
+  const btnRecordAsNew = document.getElementById('btnRecordAsNew');
+  const btnRecordAppend = document.getElementById('btnRecordAppend');
+  const btnRecordOverwrite = document.getElementById('btnRecordOverwrite');
+
   // Settings Tab
+  const btnExportCurrentJson = document.getElementById('btnExportCurrentJson');
+  const btnExportAllJson = document.getElementById('btnExportAllJson');
   const btnExportJson = document.getElementById('btnExportJson');
   const btnImportJson = document.getElementById('btnImportJson');
   const importJsonInput = document.getElementById('importJsonInput');
+  const settingExportCurrentDesc = document.getElementById('settingExportCurrentDesc');
 
   // Edit Step Modal
   const editStepModal = document.getElementById('editStepModal');
@@ -94,8 +131,25 @@ document.addEventListener('DOMContentLoaded', () => {
   let dataset = [];
   let rawSheetRows = null; // Mảng 2 chiều gốc từ Excel để có thể bật/tắt "Dòng đầu tiên là dữ liệu" bất kỳ lúc nào
   let currentFileName = '';
+  let excelFiles = {}; // Quản lý nhiều file Excel: { [id]: { id, name, dataset, rawSheetRows, rowCount, colCount, isFirstRowData, uploadedAt } }
+  let activeExcelFileId = null;
   let editingStepIndex = null;
   let cachedWorkbook = null;
+
+  // Quản lý Tab ID hiện tại đang mở Popup
+  let currentActiveTabId = null;
+  async function getCurrentActiveTab() {
+    if (currentActiveTabId !== null) return { id: currentActiveTabId };
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab && tab.id) currentActiveTabId = tab.id;
+      return tab || null;
+    } catch (e) {
+      return null;
+    }
+  }
+  // Khởi động lấy Tab ID hiện tại ngay lập tức khi mở popup để lọc tin nhắn đa tab chính xác
+  getCurrentActiveTab();
 
   // ============================================================
   // TIỆN ÍCH CHUNG
@@ -192,7 +246,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ============================================================
   function loadState() {
     chrome.storage.local.get(
-      ['scenarios', 'activeScenarioId', 'currentDataset', 'currentFileName', 'rawSheetRows', 'excelFirstRowIsData', 'runnerPrefs', 'lastRunResults'],
+      ['scenarios', 'activeScenarioId', 'currentDataset', 'currentFileName', 'rawSheetRows', 'excelFirstRowIsData', 'excelFiles', 'activeExcelFileId', 'runnerPrefs', 'lastRunResults'],
       (res) => {
         scenarios = res.scenarios || {};
         activeScenarioId = res.activeScenarioId || Object.keys(scenarios)[0] || null;
@@ -202,9 +256,29 @@ document.addEventListener('DOMContentLoaded', () => {
           if (withSteps) activeScenarioId = withSteps;
         }
 
+        excelFiles = res.excelFiles || {};
+        activeExcelFileId = res.activeExcelFileId || null;
+
         dataset = Array.isArray(res.currentDataset) ? res.currentDataset : [];
         rawSheetRows = Array.isArray(res.rawSheetRows) ? res.rawSheetRows : null;
         currentFileName = res.currentFileName || '';
+
+        // Tự động chuyển đổi dữ liệu file cũ sang thư viện nhiều file excelFiles nếu chưa có
+        if (Object.keys(excelFiles).length === 0 && dataset.length > 0) {
+          const fid = 'file_' + Date.now();
+          excelFiles[fid] = {
+            id: fid,
+            name: currentFileName || 'data.xlsx',
+            dataset,
+            rawSheetRows,
+            rowCount: dataset.length,
+            colCount: getPrimaryHeaders(dataset).length,
+            isFirstRowData: res.excelFirstRowIsData !== false,
+            uploadedAt: Date.now()
+          };
+          activeExcelFileId = fid;
+          chrome.storage.local.set({ excelFiles, activeExcelFileId });
+        }
 
         if (chkFirstRowIsData && typeof res.excelFirstRowIsData === 'boolean') {
           chkFirstRowIsData.checked = res.excelFirstRowIsData;
@@ -224,9 +298,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         renderScenarioDropdown();
         renderStepsList();
-        if (dataset.length > 0) {
-          showDataPreview(dataset, currentFileName);
-        }
+        renderExcelFilesBar();
+        checkScenarioAttachedData();
         updateRunnerCard();
         syncActiveTabStatus();
       }
@@ -236,6 +309,63 @@ document.addEventListener('DOMContentLoaded', () => {
   function saveScenarios() {
     chrome.storage.local.set({ scenarios, activeScenarioId });
   }
+
+  function checkScenarioAttachedData() {
+    const sc = scenarios[activeScenarioId];
+    if (sc && Array.isArray(sc.attachedDataset) && sc.attachedDataset.length > 0) {
+      dataset = sc.attachedDataset;
+      currentFileName = sc.attachedFileName || 'File riêng của kịch bản';
+      showDataPreview(dataset, currentFileName);
+      if (excelScopeText) {
+        excelScopeText.textContent = `💾 File riêng của: "${sc.name}"`;
+        excelScopeText.style.color = '#38bdf8';
+      }
+    } else {
+      renderExcelFilesBar();
+      if (excelScopeText) {
+        excelScopeText.textContent = '🌐 File dùng chung cho mọi kịch bản';
+        excelScopeText.style.color = '#10b981';
+      }
+      updateRunnerCard();
+    }
+  }
+
+  // Gắn / Gỡ file Excel riêng cho kịch bản
+  if (btnAttachToScenario) {
+    btnAttachToScenario.addEventListener('click', () => {
+      const sc = scenarios[activeScenarioId];
+      if (!sc) return alert('Vui lòng chọn hoặc tạo kịch bản trước!');
+      if (!dataset || dataset.length === 0) return alert('Chưa có file Excel nào được nạp!');
+      sc.attachedDataset = dataset;
+      sc.attachedFileName = currentFileName;
+      saveScenarios();
+      checkScenarioAttachedData();
+      renderScenarioDropdown();
+      updateRunnerCard();
+      alert(`✅ Đã gắn riêng file "${currentFileName}" cho kịch bản "${sc.name}"!`);
+    });
+  }
+
+  if (btnDetachFromScenario) {
+    btnDetachFromScenario.addEventListener('click', () => {
+      const sc = scenarios[activeScenarioId];
+      if (!sc) return;
+      delete sc.attachedDataset;
+      delete sc.attachedFileName;
+      saveScenarios();
+      checkScenarioAttachedData();
+      renderScenarioDropdown();
+      updateRunnerCard();
+      alert(`🌐 Đã chuyển kịch bản "${sc.name}" sang dùng file Excel dùng chung.`);
+    });
+  }
+
+  // Mở trang Dashboard Đa Tab tập trung
+  const openDashboard = () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('dashboard/dashboard.html') });
+  };
+  btnOpenDashboard?.addEventListener('click', openDashboard);
+  btnOpenDashboardFromRunner?.addEventListener('click', openDashboard);
 
   function renderScenarioDropdown() {
     scenarioSelect.innerHTML = '';
@@ -252,7 +382,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const opt = document.createElement('option');
       opt.value = id;
       const count = (scenarios[id].steps || []).length;
-      opt.textContent = `${scenarios[id].name} (${count} bước)`;
+      const fileNote = scenarios[id].attachedFileName ? ' 📁' : '';
+      opt.textContent = `${scenarios[id].name} (${count} bước)${fileNote}`;
       if (id === activeScenarioId) opt.selected = true;
       scenarioSelect.appendChild(opt);
     });
@@ -262,6 +393,7 @@ document.addEventListener('DOMContentLoaded', () => {
     activeScenarioId = e.target.value;
     chrome.storage.local.set({ activeScenarioId });
     renderStepsList();
+    checkScenarioAttachedData();
     updateRunnerCard();
   });
 
@@ -277,6 +409,84 @@ document.addEventListener('DOMContentLoaded', () => {
       updateRunnerCard();
     });
   }
+
+  // Ghép kịch bản (Pipeline / Chain Scenarios)
+  if (btnChainScenarios) {
+    btnChainScenarios.addEventListener('click', () => {
+      const keys = Object.keys(scenarios);
+      if (keys.length < 2) {
+        alert('Cần có ít nhất 2 kịch bản để có thể ghép thành một Quy trình liên hoàn!');
+        return;
+      }
+      chainScenariosList.innerHTML = '';
+      keys.forEach((id) => {
+        const sc = scenarios[id];
+        const stepCount = (sc.steps || []).length;
+        const item = document.createElement('label');
+        item.style.cssText = 'display: flex; align-items: center; gap: 8px; font-size: 13px; color: #f8fafc; padding: 6px 10px; background: #0f172a; border-radius: 4px; border: 1px solid #334155; cursor: pointer;';
+        item.innerHTML = `
+          <input type="checkbox" class="chain-chk" value="${id}" style="width: 16px; height: 16px; accent-color: #3b82f6;">
+          <span style="font-weight: 600;">${escapeHtml(sc.name)}</span>
+          <span style="font-size: 11px; color: #94a3b8; margin-left: auto;">(${stepCount} bước)</span>
+        `;
+        chainScenariosList.appendChild(item);
+      });
+
+      chainNewNameInput.value = `Quy trình liên hoàn ${keys.length + 1}`;
+      chainScenariosModal.style.display = 'flex';
+    });
+  }
+
+  btnChainModalClose?.addEventListener('click', () => { chainScenariosModal.style.display = 'none'; });
+  btnChainModalCancel?.addEventListener('click', () => { chainScenariosModal.style.display = 'none'; });
+
+  btnChainModalConfirm?.addEventListener('click', () => {
+    const checked = Array.from(document.querySelectorAll('.chain-chk:checked')).map((el) => el.value);
+    if (checked.length < 2) {
+      alert('Vui lòng tích chọn ít nhất 2 kịch bản để ghép!');
+      return;
+    }
+
+    const newName = chainNewNameInput.value.trim() || `Quy trình liên hoàn ${Date.now()}`;
+    const waitSec = Math.max(0, parseFloat(chainWaitSecInput.value) || 0);
+
+    const mergedSteps = [];
+    checked.forEach((id, idx) => {
+      const sc = scenarios[id];
+      if (sc && Array.isArray(sc.steps)) {
+        sc.steps.forEach((st) => {
+          mergedSteps.push({
+            ...st,
+            id: `step_chain_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`
+          });
+        });
+      }
+      if (waitSec > 0 && idx < checked.length - 1) {
+        mergedSteps.push({
+          id: `step_chain_wait_${Date.now()}_${idx}`,
+          type: 'wait',
+          selector: '',
+          description: `Chuyển tiếp kịch bản (chờ ${waitSec}s)`,
+          delay: Math.round(waitSec * 1000)
+        });
+      }
+    });
+
+    const newId = `scenario_pipeline_${Date.now()}`;
+    scenarios[newId] = {
+      id: newId,
+      name: newName,
+      createdAt: new Date().toISOString(),
+      steps: mergedSteps
+    };
+    activeScenarioId = newId;
+    saveScenarios();
+    renderScenarioDropdown();
+    renderStepsList();
+    updateRunnerCard();
+    chainScenariosModal.style.display = 'none';
+    alert(`🎉 Đã tạo thành công "${newName}" với tổng cộng ${mergedSteps.length} bước!`);
+  });
 
   btnNewScenario.addEventListener('click', () => {
     const name = prompt('Nhập tên kịch bản mới:', `Kịch bản ${Object.keys(scenarios).length + 1}`);
@@ -866,6 +1076,26 @@ document.addEventListener('DOMContentLoaded', () => {
     return true;
   }
 
+  // Helper: khởi động ghi vào một kịch bản với chế độ 'overwrite' hoặc 'append'
+  function launchRecording(tab, scenarioId, scenarioName, mode = 'overwrite') {
+    chrome.tabs.sendMessage(
+      tab.id,
+      {
+        action: 'START_RECORDING',
+        scenarioId,
+        scenarioName,
+        mode
+      },
+      () => {
+        if (chrome.runtime.lastError) {
+          alert('Lỗi khởi động ghi: ' + chrome.runtime.lastError.message);
+          return;
+        }
+        window.close();
+      }
+    );
+  }
+
   btnStartRecord.addEventListener('click', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const ready = await ensureTabReady(tab);
@@ -881,51 +1111,161 @@ document.addEventListener('DOMContentLoaded', () => {
       };
       activeScenarioId = newId;
       saveScenarios();
+      renderScenarioDropdown();
+      renderStepsList();
+      updateRunnerCard();
     }
 
-    const scenarioName = scenarios[activeScenarioId]?.name || 'Kịch bản hiện tại';
-    chrome.tabs.sendMessage(
-      tab.id,
-      {
-        action: 'START_RECORDING',
-        scenarioId: activeScenarioId,
-        scenarioName
-      },
-      () => {
-        if (chrome.runtime.lastError) {
-          alert('Lỗi khởi động ghi: ' + chrome.runtime.lastError.message);
-          return;
-        }
-        window.close();
-      }
-    );
+    const current = scenarios[activeScenarioId];
+    const stepsCount = (current && Array.isArray(current.steps)) ? current.steps.length : 0;
+
+    // NẾU LỊCH SỬ ĐANG TRỐNG (0 BƯỚC) -> KHÔNG CẦN HỎI, GHI TRỰC TIẾP!
+    if (stepsCount === 0) {
+      launchRecording(tab, activeScenarioId, current?.name || 'Kịch bản hiện tại', 'overwrite');
+      return;
+    }
+
+    // NẾU ĐÃ CÓ BƯỚC TRONG KỊCH BẢN (KHÔNG TRỐNG) -> MỞ MODAL XÁC NHẬN GHI ĐÈ / TẠO MỚI
+    if (recordTargetScenarioName) recordTargetScenarioName.textContent = current.name;
+    if (recordTargetStepsCount) recordTargetStepsCount.textContent = `${stepsCount}`;
+    if (recordNewScenarioNameInput) recordNewScenarioNameInput.value = `${current.name} (Bản mới)`;
+    if (recordConfirmModal) recordConfirmModal.style.display = 'flex';
   });
+
+  // Xử lý nút: Tạo kịch bản mới (Khuyên dùng)
+  if (btnRecordAsNew) {
+    btnRecordAsNew.addEventListener('click', async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const ready = await ensureTabReady(tab);
+      if (!ready) return;
+
+      const current = scenarios[activeScenarioId];
+      const newName = (recordNewScenarioNameInput?.value || '').trim() || `${current ? current.name : 'Kịch bản'} (Bản mới)`;
+      const newId = `scenario_${Date.now()}`;
+
+      scenarios[newId] = {
+        id: newId,
+        name: newName,
+        createdAt: new Date().toISOString(),
+        steps: []
+      };
+      activeScenarioId = newId;
+      saveScenarios();
+      renderScenarioDropdown();
+      renderStepsList();
+      updateRunnerCard();
+
+      if (recordConfirmModal) recordConfirmModal.style.display = 'none';
+      launchRecording(tab, newId, newName, 'overwrite');
+    });
+  }
+
+  // Xử lý nút: Ghi nối tiếp vào kịch bản này
+  if (btnRecordAppend) {
+    btnRecordAppend.addEventListener('click', async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const ready = await ensureTabReady(tab);
+      if (!ready) return;
+
+      const current = scenarios[activeScenarioId];
+      if (recordConfirmModal) recordConfirmModal.style.display = 'none';
+      launchRecording(tab, activeScenarioId, current?.name || 'Kịch bản hiện tại', 'append');
+    });
+  }
+
+  // Xử lý nút: Ghi đè kịch bản này
+  if (btnRecordOverwrite) {
+    btnRecordOverwrite.addEventListener('click', async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const ready = await ensureTabReady(tab);
+      if (!ready) return;
+
+      const current = scenarios[activeScenarioId];
+      if (recordConfirmModal) recordConfirmModal.style.display = 'none';
+      launchRecording(tab, activeScenarioId, current?.name || 'Kịch bản hiện tại', 'overwrite');
+    });
+  }
+
+  // Đóng modal xác nhận
+  if (btnRecordModalClose) {
+    btnRecordModalClose.addEventListener('click', () => {
+      if (recordConfirmModal) recordConfirmModal.style.display = 'none';
+    });
+  }
+  if (btnRecordCancel) {
+    btnRecordCancel.addEventListener('click', () => {
+      if (recordConfirmModal) recordConfirmModal.style.display = 'none';
+    });
+  }
+  if (recordConfirmModal) {
+    recordConfirmModal.addEventListener('click', (e) => {
+      if (e.target === recordConfirmModal) recordConfirmModal.style.display = 'none';
+    });
+  }
 
   // ============================================================
   // 6. XỬ LÝ FILE EXCEL / CSV
   // ============================================================
-  btnBrowseFile.addEventListener('click', () => excelFileInput.click());
+  btnBrowseFile.addEventListener('click', () => {
+    excelFileInput.value = '';
+    excelFileInput.click();
+  });
+
   excelDropzone.addEventListener('click', (e) => {
-    if (e.target !== btnBrowseFile) excelFileInput.click();
+    if (e.target !== btnBrowseFile) {
+      excelFileInput.value = '';
+      excelFileInput.click();
+    }
   });
 
-  excelDropzone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    excelDropzone.classList.add('dragover');
-  });
+  if (compactDropzone) {
+    compactDropzone.addEventListener('click', () => {
+      excelFileInput.value = '';
+      excelFileInput.click();
+    });
+  }
 
-  excelDropzone.addEventListener('dragleave', () => {
-    excelDropzone.classList.remove('dragover');
-  });
+  // Hỗ trợ kéo thả trên toàn bộ khu vực Tab Dữ Liệu (cả khi đã có file hoặc chưa có file)
+  const dropTargets = [excelDropzone, compactDropzone, dataPreviewCard, tabData].filter(Boolean);
 
-  excelDropzone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    excelDropzone.classList.remove('dragover');
-    if (e.dataTransfer.files.length > 0) processFile(e.dataTransfer.files[0]);
+  dropTargets.forEach((target) => {
+    target.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      target.classList.add('dragover');
+      if (dataPreviewCard) dataPreviewCard.classList.add('dragover');
+      if (compactDropzone) compactDropzone.classList.add('dragover');
+      if (excelDropzone) excelDropzone.classList.add('dragover');
+    });
+
+    target.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.relatedTarget && target.contains(e.relatedTarget)) return;
+      target.classList.remove('dragover');
+      if (dataPreviewCard) dataPreviewCard.classList.remove('dragover');
+      if (compactDropzone) compactDropzone.classList.remove('dragover');
+      if (excelDropzone) excelDropzone.classList.remove('dragover');
+    });
+
+    target.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropTargets.forEach((t) => t.classList.remove('dragover'));
+      if (dataPreviewCard) dataPreviewCard.classList.remove('dragover');
+      if (compactDropzone) compactDropzone.classList.remove('dragover');
+      if (excelDropzone) excelDropzone.classList.remove('dragover');
+
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        processFiles(e.dataTransfer.files);
+      }
+    });
   });
 
   excelFileInput.addEventListener('change', (e) => {
-    if (e.target.files.length > 0) processFile(e.target.files[0]);
+    if (e.target.files && e.target.files.length > 0) {
+      processFiles(e.target.files);
+    }
   });
 
   // Chuyển mảng 2 chiều rawRows thành danh sách đối tượng theo chế độ isFirstRowData
@@ -968,31 +1308,75 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function processFile(file) {
-    currentFileName = file.name;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target.result);
-        cachedWorkbook = XLSX.read(data, { type: 'array' });
-        const firstSheetName = cachedWorkbook.SheetNames[0];
-        const worksheet = cachedWorkbook.Sheets[firstSheetName];
-        rawSheetRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+  // Đọc và nạp một hoặc nhiều file Excel/CSV cùng lúc
+  function processFiles(files) {
+    if (!files || files.length === 0) return;
+    const fileList = Array.from(files).filter((f) => /\.(xlsx|xls|csv)$/i.test(f.name));
+    if (fileList.length === 0) {
+      alert('Vui lòng chọn hoặc kéo thả file có định dạng .xlsx, .xls hoặc .csv!');
+      return;
+    }
 
-        // Tự động nhận diện xem dòng 1 là tiêu đề hay dữ liệu
-        const autoIsData = detectFirstRowIsData(rawSheetRows);
-        if (chkFirstRowIsData) chkFirstRowIsData.checked = autoIsData;
+    let processedCount = 0;
+    fileList.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const wb = XLSX.read(data, { type: 'array' });
+          cachedWorkbook = wb;
+          const firstSheetName = wb.SheetNames[0];
+          const worksheet = wb.Sheets[firstSheetName];
+          const sheetRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
 
-        applyExcelParsing();
-      } catch (err) {
-        console.error(err);
-        alert('Lỗi khi đọc file Excel/CSV: ' + err.message);
-      }
-    };
-    reader.readAsArrayBuffer(file);
+          const autoIsData = detectFirstRowIsData(sheetRows);
+          const isFirstRowData = chkFirstRowIsData ? chkFirstRowIsData.checked : autoIsData;
+          const ds = buildDatasetFromRawRows(sheetRows, isFirstRowData);
+
+          if (ds.length > 0) {
+            const fid = 'file_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+            excelFiles[fid] = {
+              id: fid,
+              name: file.name,
+              dataset: ds,
+              rawSheetRows: sheetRows,
+              rowCount: ds.length,
+              colCount: getPrimaryHeaders(ds).length,
+              isFirstRowData,
+              uploadedAt: Date.now()
+            };
+            activeExcelFileId = fid;
+            currentFileName = file.name;
+            dataset = ds;
+            rawSheetRows = sheetRows;
+          }
+        } catch (err) {
+          console.error(err);
+          alert(`Lỗi khi đọc file "${file.name}": ` + err.message);
+        } finally {
+          processedCount++;
+          if (processedCount === fileList.length) {
+            chrome.storage.local.set({
+              excelFiles,
+              activeExcelFileId,
+              currentDataset: dataset,
+              rawSheetRows,
+              currentFileName,
+              excelFirstRowIsData: chkFirstRowIsData ? chkFirstRowIsData.checked : true
+            });
+            renderExcelFilesBar();
+          }
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
   }
 
-  function applyExcelParsing() {
+  function processFile(file) {
+    if (file) processFiles([file]);
+  }
+
+  function applyExcelParsing(fileName = currentFileName) {
     if (!rawSheetRows && cachedWorkbook) {
       const firstSheetName = cachedWorkbook.SheetNames[0];
       const worksheet = cachedWorkbook.Sheets[firstSheetName];
@@ -1008,15 +1392,157 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    currentFileName = fileName || currentFileName || 'data.xlsx';
+
+    // Tạo fileId mới hoặc dùng activeExcelFileId nếu cùng tên file
+    let fid = activeExcelFileId;
+    if (!fid || !excelFiles[fid] || excelFiles[fid].name !== currentFileName) {
+      fid = 'file_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    }
+
+    excelFiles[fid] = {
+      id: fid,
+      name: currentFileName,
+      dataset,
+      rawSheetRows,
+      rowCount: dataset.length,
+      colCount: getPrimaryHeaders(dataset).length,
+      isFirstRowData,
+      uploadedAt: Date.now()
+    };
+    activeExcelFileId = fid;
+
     chrome.storage.local.set({
+      excelFiles,
+      activeExcelFileId,
       currentDataset: dataset,
       rawSheetRows,
       currentFileName,
       excelFirstRowIsData: isFirstRowData
     });
-    showDataPreview(dataset, currentFileName);
-    renderStepsList();
-    updateRunnerCard();
+
+    renderExcelFilesBar();
+  }
+
+  function renderExcelFilesBar() {
+    const fileIds = Object.keys(excelFiles);
+    if (fileIds.length === 0) {
+      if (excelFilesBar) excelFilesBar.style.display = 'none';
+      if (dataPreviewCard) dataPreviewCard.style.display = 'none';
+      if (excelDropzone) excelDropzone.style.display = 'block';
+      if (dataRowsBadge) dataRowsBadge.style.display = 'none';
+      dataset = [];
+      currentFileName = '';
+      rawSheetRows = null;
+      renderStepsList();
+      updateRunnerCard();
+      return;
+    }
+
+    if (!activeExcelFileId || !excelFiles[activeExcelFileId]) {
+      activeExcelFileId = fileIds[0];
+    }
+
+    if (excelFilesBar) {
+      excelFilesBar.style.display = 'block';
+      if (excelFileSelect) {
+        excelFileSelect.innerHTML = fileIds.map((id) => {
+          const f = excelFiles[id];
+          const isSel = id === activeExcelFileId ? 'selected' : '';
+          return `<option value="${escapeHtml(id)}" ${isSel}>📄 ${escapeHtml(f.name)} (${f.rowCount || f.dataset?.length || 0} dòng)</option>`;
+        }).join('');
+      }
+    }
+
+    const cur = excelFiles[activeExcelFileId];
+    if (cur) {
+      dataset = cur.dataset || [];
+      currentFileName = cur.name || '';
+      rawSheetRows = cur.rawSheetRows || null;
+      if (chkFirstRowIsData && typeof cur.isFirstRowData === 'boolean') {
+        chkFirstRowIsData.checked = cur.isFirstRowData;
+      }
+      showDataPreview(dataset, currentFileName);
+      renderStepsList();
+      updateRunnerCard();
+    }
+  }
+
+  if (excelFileSelect) {
+    excelFileSelect.addEventListener('change', (e) => {
+      activeExcelFileId = e.target.value;
+      const f = excelFiles[activeExcelFileId];
+      if (f) {
+        dataset = f.dataset || [];
+        currentFileName = f.name || '';
+        rawSheetRows = f.rawSheetRows || null;
+        if (chkFirstRowIsData && typeof f.isFirstRowData === 'boolean') {
+          chkFirstRowIsData.checked = f.isFirstRowData;
+        }
+        chrome.storage.local.set({
+          activeExcelFileId,
+          currentDataset: dataset,
+          currentFileName,
+          rawSheetRows,
+          excelFirstRowIsData: f.isFirstRowData !== false
+        });
+        showDataPreview(dataset, currentFileName);
+        renderStepsList();
+        updateRunnerCard();
+      }
+    });
+  }
+
+  if (btnUploadAnotherFile) {
+    btnUploadAnotherFile.addEventListener('click', () => {
+      excelFileInput.value = '';
+      excelFileInput.click();
+    });
+  }
+
+  if (btnChangeFile) {
+    btnChangeFile.addEventListener('click', () => {
+      excelFileInput.value = '';
+      excelFileInput.click();
+    });
+  }
+
+  function deleteSelectedExcelFile() {
+    if (!activeExcelFileId || !excelFiles[activeExcelFileId]) return;
+    const nameToDelete = excelFiles[activeExcelFileId].name;
+    if (!confirm(`Bạn có chắc muốn xóa file "${nameToDelete}" khỏi danh sách?`)) return;
+
+    delete excelFiles[activeExcelFileId];
+    const remainingIds = Object.keys(excelFiles);
+    activeExcelFileId = remainingIds.length > 0 ? remainingIds[0] : null;
+
+    if (activeExcelFileId && excelFiles[activeExcelFileId]) {
+      const nextF = excelFiles[activeExcelFileId];
+      dataset = nextF.dataset || [];
+      currentFileName = nextF.name || '';
+      rawSheetRows = nextF.rawSheetRows || null;
+      chrome.storage.local.set({
+        excelFiles,
+        activeExcelFileId,
+        currentDataset: dataset,
+        currentFileName,
+        rawSheetRows,
+        excelFirstRowIsData: nextF.isFirstRowData !== false
+      });
+    } else {
+      dataset = [];
+      currentFileName = '';
+      rawSheetRows = null;
+      cachedWorkbook = null;
+      excelFileInput.value = '';
+      chrome.storage.local.remove(['currentDataset', 'rawSheetRows', 'currentFileName', 'activeExcelFileId']);
+      chrome.storage.local.set({ excelFiles: {} });
+    }
+    renderExcelFilesBar();
+  }
+
+  if (btnDeleteSelectedFile) {
+    btnDeleteSelectedFile.addEventListener('click', deleteSelectedExcelFile);
   }
 
   if (chkFirstRowIsData) {
@@ -1104,19 +1630,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  btnClearData.addEventListener('click', () => {
-    dataset = [];
-    rawSheetRows = null;
-    currentFileName = '';
-    cachedWorkbook = null;
-    excelFileInput.value = '';
-    chrome.storage.local.remove(['currentDataset', 'rawSheetRows', 'currentFileName']);
-    dataPreviewCard.style.display = 'none';
-    excelDropzone.style.display = 'block';
-    dataRowsBadge.style.display = 'none';
-    renderStepsList();
-    updateRunnerCard();
-  });
+  btnClearData.addEventListener('click', deleteSelectedExcelFile);
 
   // ============================================================
   // 7. TAB CHẠY TỰ ĐỘNG & BÁO CÁO KẾT QUẢ
@@ -1149,6 +1663,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (runStartRowInfo) {
         runStartRowInfo.textContent = start > 1 ? `(Chạy ${Math.max(0, dataset.length - start + 1)} dòng còn lại)` : `(Tổng ${dataset.length} dòng)`;
       }
+    }
+    if (settingExportCurrentDesc) {
+      settingExportCurrentDesc.textContent = current
+        ? `Tải riêng "${current.name}" (${current.steps?.length || 0} bước) về máy để gửi cho người khác.`
+        : 'Tải riêng kịch bản hiện tại về máy để gửi cho người khác.';
     }
   }
 
@@ -1211,8 +1730,21 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Lắng nghe tiến độ & kết quả từ Content Script
-  chrome.runtime.onMessage.addListener((msg) => {
+  chrome.runtime.onMessage.addListener(async (msg, sender) => {
     if (!msg) return;
+
+    if (!currentActiveTabId) {
+      await getCurrentActiveTab();
+    }
+
+    const msgTabId = sender?.tab?.id ?? msg?.tabId ?? null;
+
+    // NGUYÊN TẮC CỐT LÕI ĐA TAB:
+    // Nếu thông điệp tiến độ/kết quả đến từ TAB KHÁC đang chạy ngầm (msgTabId !== currentActiveTabId):
+    // Tuyệt đối KHÔNG chiếm quyền điều khiển, KHÔNG đổi nút và KHÔNG ghi đè tiến độ của tab hiện tại!
+    if (msgTabId && currentActiveTabId && msgTabId !== currentActiveTabId) {
+      return;
+    }
 
     if (msg.action === 'EXECUTION_PROGRESS') {
       btnStartRunner.style.display = 'none';
@@ -1262,7 +1794,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   btnStopRunner.addEventListener('click', async () => {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await getCurrentActiveTab();
     if (tab && tab.id) {
       chrome.tabs.sendMessage(tab.id, { action: 'STOP_EXECUTION' }, () => void chrome.runtime.lastError);
     }
@@ -1270,16 +1802,36 @@ document.addEventListener('DOMContentLoaded', () => {
     btnStopRunner.style.display = 'none';
     progressStatusText.textContent = 'Đã dừng khẩn cấp';
     setHeaderStatus('idle', 'Sẵn sàng');
-    addLog('⏹️ Đã dừng kịch bản tự động.', 'error');
+    addLog('⏹️ Đã dừng kịch bản tự động trên tab này.', 'error');
   });
 
   // Đồng bộ trạng thái nếu mở lại Popup khi tab đang chạy hoặc đang ghi
   async function syncActiveTabStatus() {
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tab = await getCurrentActiveTab();
       if (!tab || !tab.id) return;
+      currentActiveTabId = tab.id;
+
       chrome.tabs.sendMessage(tab.id, { action: 'GET_STATUS' }, (st) => {
-        if (chrome.runtime.lastError || !st) return;
+        if (chrome.runtime.lastError || !st || !st.isRunning) {
+          // Tab hiện tại đang rảnh (Idle), hiển thị nút Bắt đầu chạy bình thường
+          btnStartRunner.style.display = 'flex';
+          btnStopRunner.style.display = 'none';
+          runProgressBox.style.display = 'none';
+
+          // Kiểm tra xem có tab khác đang chạy ngầm không để hiển thị trạng thái chuẩn xác
+          chrome.storage.local.get(['afActiveJobs'], (res) => {
+            const jobs = res.afActiveJobs || {};
+            const otherRunning = Object.keys(jobs).filter((id) => jobs[id].status === 'running' && Number(id) !== tab.id);
+            if (otherRunning.length > 0) {
+              setHeaderStatus('idle', `Sẵn sàng (${otherRunning.length} tab khác đang chạy ngầm)`);
+            } else {
+              setHeaderStatus('idle', 'Sẵn sàng');
+            }
+          });
+          return;
+        }
+
         if (st.isRecording) {
           setHeaderStatus('recording', `Đang ghi (${st.recordedCount})`);
         } else if (st.isRunning) {
@@ -1355,57 +1907,223 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ============================================================
-  // 8. CÀI ĐẶT: XUẤT / NHẬP KỊCH BẢN JSON
+  // 8. CÀI ĐẶT: XUẤT / NHẬP KỊCH BẢN JSON (TỪNG KỊCH BẢN & BẢO VỆ DỮ LIỆU CŨ)
   // ============================================================
-  btnExportJson.addEventListener('click', () => {
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(scenarios, null, 2));
-    const dlAnchor = document.createElement('a');
-    dlAnchor.setAttribute('href', dataStr);
-    dlAnchor.setAttribute('download', `autoflow_scenarios_${Date.now()}.json`);
-    dlAnchor.click();
-  });
 
-  btnImportJson.addEventListener('click', () => importJsonInput.click());
-  importJsonInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const imported = JSON.parse(ev.target.result);
-        if (!imported || typeof imported !== 'object' || Array.isArray(imported)) {
-          throw new Error('Cấu trúc file JSON không hợp lệ');
-        }
-        // Kiểm tra tính hợp lệ của từng kịch bản trước khi nhập
-        const validEntries = {};
-        Object.entries(imported).forEach(([id, sc]) => {
-          if (sc && typeof sc === 'object' && Array.isArray(sc.steps)) {
-            validEntries[id] = {
-              id: sc.id || id,
-              name: String(sc.name || id),
-              createdAt: sc.createdAt || new Date().toISOString(),
-              steps: sc.steps
-            };
-          }
-        });
-        if (Object.keys(validEntries).length === 0) {
-          throw new Error('Không tìm thấy kịch bản hợp lệ trong file JSON');
-        }
-        scenarios = { ...scenarios, ...validEntries };
-        activeScenarioId = Object.keys(validEntries)[0] || activeScenarioId;
-        saveScenarios();
-        renderScenarioDropdown();
-        renderStepsList();
-        updateRunnerCard();
-        alert(`✅ Đã nhập thành công ${Object.keys(validEntries).length} kịch bản!`);
-      } catch (err) {
-        alert('Lỗi nhập file JSON: ' + err.message);
-      } finally {
-        importJsonInput.value = '';
+  // Xuất 1 kịch bản đơn lẻ ra file JSON riêng
+  function exportSingleScenario(scenario) {
+    if (!scenario) {
+      alert('Vui lòng chọn kịch bản bạn muốn xuất!');
+      return;
+    }
+    const cleanFileName = (scenario.name || 'kich_ban')
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .replace(/\s+/g, '_')
+      .trim();
+
+    const singleData = {
+      version: '1.2',
+      format: 'autoflow_single_scenario',
+      exportedAt: new Date().toISOString(),
+      scenario: {
+        id: scenario.id,
+        name: scenario.name,
+        createdAt: scenario.createdAt || new Date().toISOString(),
+        updatedAt: scenario.updatedAt || new Date().toISOString(),
+        steps: Array.isArray(scenario.steps) ? scenario.steps : [],
+        attachedFileName: scenario.attachedFileName || null
       }
     };
-    reader.readAsText(file);
-  });
+
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(singleData, null, 2));
+    const dlAnchor = document.createElement('a');
+    dlAnchor.setAttribute('href', dataStr);
+    dlAnchor.setAttribute('download', `autoflow_${cleanFileName}.json`);
+    dlAnchor.click();
+  }
+
+  // Xuất toàn bộ kịch bản ra 1 file JSON sao lưu
+  function exportAllScenarios() {
+    if (!scenarios || Object.keys(scenarios).length === 0) {
+      alert('Chưa có kịch bản nào để xuất!');
+      return;
+    }
+    const bundleData = {
+      version: '1.2',
+      format: 'autoflow_bundle',
+      exportedAt: new Date().toISOString(),
+      total: Object.keys(scenarios).length,
+      scenarios: scenarios
+    };
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(bundleData, null, 2));
+    const dlAnchor = document.createElement('a');
+    dlAnchor.setAttribute('href', dataStr);
+    dlAnchor.setAttribute('download', `autoflow_all_scenarios_${Date.now()}.json`);
+    dlAnchor.click();
+  }
+
+  // Gắn sự kiện xuất kịch bản
+  if (btnExportScenario) {
+    btnExportScenario.addEventListener('click', () => {
+      exportSingleScenario(scenarios[activeScenarioId]);
+    });
+  }
+
+  if (btnExportCurrentJson) {
+    btnExportCurrentJson.addEventListener('click', () => {
+      exportSingleScenario(scenarios[activeScenarioId]);
+    });
+  }
+
+  if (btnExportAllJson) {
+    btnExportAllJson.addEventListener('click', exportAllScenarios);
+  }
+  if (btnExportJson) {
+    btnExportJson.addEventListener('click', exportAllScenarios);
+  }
+
+  // Trích xuất danh sách kịch bản từ mọi định dạng JSON (file đơn lẻ, mảng, bundle, hoặc map)
+  function extractScenariosFromImport(imported) {
+    const list = [];
+    if (!imported || typeof imported !== 'object') return list;
+
+    // Định dạng 1: Mảng kịch bản [ { name, steps }, ... ]
+    if (Array.isArray(imported)) {
+      imported.forEach((item) => {
+        if (item && typeof item === 'object' && Array.isArray(item.steps)) {
+          list.push(item);
+        }
+      });
+      return list;
+    }
+
+    // Định dạng 2: Gói kịch bản đơn có thuộc tính scenario { format: "autoflow_single_scenario", scenario: { ... } }
+    if (imported.scenario && typeof imported.scenario === 'object' && Array.isArray(imported.scenario.steps)) {
+      list.push(imported.scenario);
+      return list;
+    }
+
+    // Định dạng 3: Gói bundle { scenarios: { ... } } hoặc { data: { ... } }
+    if (imported.scenarios && typeof imported.scenarios === 'object') {
+      return extractScenariosFromImport(imported.scenarios);
+    }
+    if (imported.data && typeof imported.data === 'object') {
+      return extractScenariosFromImport(imported.data);
+    }
+
+    // Định dạng 4: Bản thân file JSON chính là 1 kịch bản đơn { name: "...", steps: [...] }
+    if (Array.isArray(imported.steps)) {
+      list.push(imported);
+      return list;
+    }
+
+    // Định dạng 5: Bản đồ dictionary { [id]: { name, steps } }
+    Object.values(imported).forEach((val) => {
+      if (val && typeof val === 'object' && Array.isArray(val.steps)) {
+        list.push(val);
+      }
+    });
+
+    return list;
+  }
+
+  // Nhập kịch bản JSON (ĐẢM BẢO 100% KHÔNG LÀM MẤT HOẶC GHI ĐÈ KỊCH BẢN HIỆN TẠI)
+  if (btnImportJson) {
+    btnImportJson.addEventListener('click', () => importJsonInput.click());
+  }
+
+  if (importJsonInput) {
+    importJsonInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const rawText = ev.target.result;
+          let parsed;
+          try {
+            parsed = JSON.parse(rawText);
+          } catch (pe) {
+            throw new Error('Nội dung file không phải định dạng JSON hợp lệ.');
+          }
+
+          const extracted = extractScenariosFromImport(parsed);
+          if (!extracted || extracted.length === 0) {
+            throw new Error('Không tìm thấy kịch bản hợp lệ nào trong file JSON đã chọn.');
+          }
+
+          let addedCount = 0;
+          let lastAddedId = null;
+          const importedNames = [];
+
+          // Tập hợp tên các kịch bản hiện có để chống trùng tên
+          const existingNames = new Set(
+            Object.values(scenarios).map((s) => (s && s.name ? s.name.trim().toLowerCase() : ''))
+          );
+
+          extracted.forEach((incoming, idx) => {
+            const rawName = String(incoming.name || `Kịch bản nhập ${idx + 1}`).trim();
+            let finalName = rawName;
+
+            // Chống trùng tên: nếu tên đã tồn tại, tự động thêm hậu tố "(Đã nhập)" để phân biệt rõ
+            if (existingNames.has(finalName.toLowerCase())) {
+              let count = 1;
+              finalName = `${rawName} (Đã nhập)`;
+              while (existingNames.has(finalName.toLowerCase())) {
+                count++;
+                finalName = `${rawName} (Đã nhập ${count})`;
+              }
+            }
+            existingNames.add(finalName.toLowerCase());
+
+            // Chống trùng ID: Tuyệt đối KHÔNG dùng ID trùng với kịch bản đang có trên máy
+            let finalId = incoming.id;
+            if (!finalId || scenarios[finalId]) {
+              finalId = `scenario_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+            }
+
+            const validScenario = {
+              id: finalId,
+              name: finalName,
+              createdAt: incoming.createdAt || new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              steps: Array.isArray(incoming.steps) ? incoming.steps : []
+            };
+
+            if (incoming.attachedFileName) validScenario.attachedFileName = incoming.attachedFileName;
+            if (Array.isArray(incoming.attachedDataset)) validScenario.attachedDataset = incoming.attachedDataset;
+
+            // NẠP VÀO DANH SÁCH - BẢO LƯU 100% CÁC KỊCH BẢN CŨ ĐANG CÓ
+            scenarios[finalId] = validScenario;
+            lastAddedId = finalId;
+            addedCount++;
+            importedNames.push(finalName);
+          });
+
+          // Tự động chọn kịch bản vừa nhập để người dùng nhìn thấy ngay
+          if (lastAddedId) {
+            activeScenarioId = lastAddedId;
+          }
+
+          saveScenarios();
+          renderScenarioDropdown();
+          renderStepsList();
+          checkScenarioAttachedData();
+          updateRunnerCard();
+
+          const nameList = importedNames.slice(0, 5).map((n) => `• ${n}`).join('\n');
+          const moreText = importedNames.length > 5 ? `\n... và ${importedNames.length - 5} kịch bản khác` : '';
+          alert(`🎉 Đã nhập thành công ${addedCount} kịch bản (toàn bộ kịch bản cũ được giữ nguyên vẹn 100%):\n\n${nameList}${moreText}`);
+        } catch (err) {
+          alert('⚠️ Lỗi khi nhập kịch bản: ' + err.message);
+        } finally {
+          importJsonInput.value = '';
+        }
+      };
+      reader.readAsText(file);
+    });
+  }
 
   // Khởi động
   loadState();

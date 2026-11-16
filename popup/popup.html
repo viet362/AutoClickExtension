@@ -21,9 +21,12 @@
           <span class="brand-tag">Macro & Excel RPA</span>
         </div>
       </div>
-      <div class="header-status">
-        <span class="status-indicator" id="headerStatusDot"></span>
-        <span class="status-text" id="headerStatusText">Sẵn sàng</span>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button class="btn btn-primary btn-xs" id="btnOpenDashboard" title="Mở Trung tâm điều khiển Quản lý Đa Luồng, Đa Tab & Đa Cửa Sổ" style="font-weight: 700; background: linear-gradient(135deg, #2563eb, #8b5cf6); border: none; padding: 4px 10px; border-radius: 6px;">🖥️ Đa Luồng</button>
+        <div class="header-status">
+          <span class="status-indicator" id="headerStatusDot"></span>
+          <span class="status-text" id="headerStatusText">Sẵn sàng</span>
+        </div>
       </div>
     </header>
 
@@ -68,6 +71,8 @@
         <div class="selector-row">
           <select id="scenarioSelect" class="form-select"></select>
           <button class="btn btn-secondary btn-sm" id="btnRenameScenario" title="Đổi tên kịch bản">✏️</button>
+          <button class="btn btn-secondary btn-sm" id="btnChainScenarios" title="Tạo Quy trình liên hoàn ghép nhiều kịch bản">🔗 Ghép</button>
+          <button class="btn btn-secondary btn-sm" id="btnExportScenario" title="Xuất riêng kịch bản này ra file JSON để gửi cho đồng nghiệp">📤</button>
           <button class="btn btn-secondary btn-sm" id="btnNewScenario" title="Tạo mới">+</button>
           <button class="btn btn-danger-ghost btn-sm" id="btnDeleteScenario" title="Xóa">🗑️</button>
         </div>
@@ -130,8 +135,23 @@
         </label>
       </div>
 
+      <!-- Thanh chọn nhanh danh sách File Excel đã nạp (Multi-file) -->
+      <div class="excel-files-bar" id="excelFilesBar" style="display: none; margin-bottom: 12px; padding: 10px 14px; background: rgba(15, 23, 42, 0.85); border: 1px solid #3b82f6; border-radius: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-size: 12px; font-weight: 700; color: #94a3b8; display: flex; align-items: center; gap: 6px;">
+            📁 <span>Danh sách file Excel đã nạp:</span>
+          </span>
+          <button class="btn btn-primary btn-xs" id="btnUploadAnotherFile" title="Tải thêm file Excel khác lên mà không xóa file cũ">+ Tải thêm file</button>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <select id="excelFileSelect" class="form-select" style="flex: 1; font-size: 13px; font-weight: 600; padding: 6px 10px; background: #0f172a; color: #38bdf8; border: 1px solid #475569; border-radius: 6px; outline: none; cursor: pointer;">
+          </select>
+          <button class="btn btn-danger-ghost btn-xs" id="btnDeleteSelectedFile" title="Xóa file đang chọn khỏi danh sách">🗑️ Xóa</button>
+        </div>
+      </div>
+
       <div class="upload-dropzone" id="excelDropzone">
-        <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" style="display: none;">
+        <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" multiple style="display: none;">
         <div class="upload-icon">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -140,18 +160,42 @@
           </svg>
         </div>
         <h3 class="upload-title">Chọn hoặc Kéo thả file Excel / CSV</h3>
-        <p class="upload-subtitle">Hỗ trợ định dạng .xlsx, .xls, .csv</p>
+        <p class="upload-subtitle">Hỗ trợ định dạng .xlsx, .xls, .csv (Có thể kéo thả nhiều file cùng lúc)</p>
         <button class="btn btn-primary btn-sm" id="btnBrowseFile">Chọn file từ máy</button>
       </div>
 
       <!-- Excel File Info & Columns Helper -->
       <div class="data-preview-card" id="dataPreviewCard" style="display: none;">
+        <div class="compact-dropzone" id="compactDropzone" title="Kéo thả hoặc bấm để thêm file Excel khác vào danh sách">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <span><strong>Kéo thả thêm file Excel / CSV vào đây</strong> hoặc bấm để chọn thêm file</span>
+        </div>
+
         <div class="file-summary">
           <div class="file-info-col">
             <span class="file-name" id="previewFileName">data.xlsx</span>
             <span class="file-stats" id="previewFileStats">0 dòng | 0 cột</span>
           </div>
-          <button class="btn btn-danger-ghost btn-xs" id="btnClearData">Xóa</button>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <button class="btn btn-secondary btn-xs" id="btnChangeFile" title="Tải file khác lên thay thế hoặc bổ sung">📂 Thay / Thêm file</button>
+            <button class="btn btn-danger-ghost btn-xs" id="btnClearData">Xóa</button>
+          </div>
+        </div>
+
+        <!-- Thanh gắn file riêng cho kịch bản -->
+        <div class="scenario-attachment-bar" style="margin-bottom: 12px; padding: 8px 12px; background: rgba(15, 23, 42, 0.7); border: 1px solid #334155; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; flex-direction: column;">
+            <span style="font-size: 11px; color: #94a3b8;">Phạm vi áp dụng:</span>
+            <span id="excelScopeText" style="font-size: 12px; font-weight: 700; color: #38bdf8;">🌐 File dùng chung cho mọi kịch bản</span>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button class="btn btn-secondary btn-xs" id="btnAttachToScenario" title="Lưu file này riêng cho kịch bản hiện tại">💾 Gắn riêng</button>
+            <button class="btn btn-secondary btn-xs" id="btnDetachFromScenario" title="Đặt làm file dùng chung">🌐 Dùng chung</button>
+          </div>
         </div>
 
         <div class="columns-helper">
@@ -265,6 +309,13 @@
           <div class="log-item log-empty">Chưa có nhật ký hoạt động. Bấm Chạy để bắt đầu.</div>
         </div>
       </div>
+
+      <!-- Shortcut to Multi-Tab Dashboard -->
+      <div style="margin-top: 14px; margin-bottom: 6px;">
+        <button class="btn btn-secondary btn-sm" id="btnOpenDashboardFromRunner" style="width: 100%; padding: 8px 12px; background: rgba(59, 130, 246, 0.12); border-color: #3b82f6; color: #60a5fa; font-weight: 700; border-radius: 6px;">
+          🖥️ Mở Dashboard Quản Lý Chạy Đa Tab / Đa Cửa Sổ ↗
+        </button>
+      </div>
     </main>
 
     <!-- TAB 4: CÀI ĐẶT & HƯỚNG DẪN -->
@@ -273,18 +324,25 @@
         <h4 class="settings-group-title">Quản lý & Chia sẻ</h4>
         <div class="settings-row">
           <div>
-            <div class="setting-name">Xuất kịch bản (Export JSON)</div>
-            <div class="setting-desc">Tải kịch bản về máy để sao lưu hoặc gửi cho đồng nghiệp.</div>
+            <div class="setting-name">Xuất kịch bản đang chọn (JSON)</div>
+            <div class="setting-desc" id="settingExportCurrentDesc">Tải riêng kịch bản hiện tại về máy để gửi cho người khác.</div>
           </div>
-          <button class="btn btn-secondary btn-sm" id="btnExportJson">Xuất file</button>
+          <button class="btn btn-secondary btn-sm" id="btnExportCurrentJson">Xuất kịch bản này</button>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="setting-name">Sao lưu toàn bộ kịch bản (JSON)</div>
+            <div class="setting-desc">Tải tất cả kịch bản có trong máy về 1 file duy nhất.</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="btnExportAllJson">Xuất tất cả</button>
         </div>
         <div class="settings-row">
           <div>
             <div class="setting-name">Nhập kịch bản (Import JSON)</div>
-            <div class="setting-desc">Nạp kịch bản từ file JSON của người khác vào máy.</div>
+            <div class="setting-desc">Nhập thêm kịch bản từ người khác mà không làm mất kịch bản hiện có.</div>
           </div>
           <input type="file" id="importJsonInput" accept=".json" style="display: none;">
-          <button class="btn btn-secondary btn-sm" id="btnImportJson">Nhập file</button>
+          <button class="btn btn-primary btn-sm" id="btnImportJson">Nhập file</button>
         </div>
       </div>
 
@@ -407,9 +465,99 @@
       </div>
     </div>
 
+    <!-- Modal Ghép Kịch Bản (Pipeline / Chain Scenarios) -->
+    <div class="modal-overlay" id="chainScenariosModal" style="display: none;">
+      <div class="modal-box" style="max-width: 440px;">
+        <div class="modal-header">
+          <h3 class="modal-title">🔗 Tạo Quy trình liên hoàn (Ghép kịch bản)</h3>
+          <button class="modal-close" id="btnChainModalClose">✕</button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">
+            Chọn các kịch bản bạn muốn ghép theo thứ tự để thực hiện liên tiếp trên 1 tab:
+          </p>
+          <div id="chainScenariosList" style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px;">
+            <!-- Danh sách checkbox kịch bản -->
+          </div>
+          <div class="form-group-modal">
+            <label class="section-label">Tên Quy trình mới:</label>
+            <input type="text" id="chainNewNameInput" class="form-input-modal" placeholder="Ví dụ: Quy trình: Đăng nhập + Mua hàng + Xác nhận">
+          </div>
+          <div class="form-group-modal" style="margin-top: 8px;">
+            <label class="section-label">Thời gian chờ nghỉ giữa các kịch bản (giây):</label>
+            <input type="number" id="chainWaitSecInput" class="form-input-modal" value="1.5" min="0" max="60" step="0.5">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary btn-sm" id="btnChainModalCancel">Hủy</button>
+          <button class="btn btn-primary btn-sm" id="btnChainModalConfirm">🚀 Ghép thành Kịch bản mới</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Xác Nhận Ghi Đè hoặc Tạo Mới (Bảo vệ Kịch Bản Cũ) -->
+    <div class="modal-overlay" id="recordConfirmModal" style="display: none;">
+      <div class="modal-card" style="max-width: 400px;">
+        <div class="modal-header">
+          <h3 class="modal-title">⏺️ Xác nhận ghi thao tác</h3>
+          <button class="modal-close" id="btnRecordModalClose">✕</button>
+        </div>
+        <div class="modal-body" style="padding: 16px;">
+          <div style="display: flex; gap: 12px; align-items: flex-start; margin-bottom: 14px;">
+            <div style="font-size: 26px; line-height: 1;">⚠️</div>
+            <div>
+              <div style="font-size: 13px; font-weight: 700; color: #f8fafc; margin-bottom: 4px;">
+                Kịch bản đã có bước ghi từ trước!
+              </div>
+              <div style="font-size: 12px; color: #94a3b8; line-height: 1.5;">
+                Kịch bản "<strong id="recordTargetScenarioName" style="color: #38bdf8;"></strong>" hiện đang có <strong id="recordTargetStepsCount" style="color: #f59e0b;"></strong> bước. Bạn muốn tạo kịch bản mới hay ghi đè lên kịch bản này?
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group-modal" style="margin-bottom: 12px; background: rgba(30, 41, 59, 0.4); padding: 8px 10px; border-radius: 6px; border: 1px solid #334155;">
+            <label class="section-label" style="font-size: 11px; margin-bottom: 4px;">Tên kịch bản (nếu chọn tạo mới):</label>
+            <input type="text" id="recordNewScenarioNameInput" class="form-input-modal" placeholder="Nhập tên kịch bản mới..." style="padding: 6px 10px; font-size: 12px;">
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <!-- Option 1: Tạo kịch bản mới -->
+            <button type="button" class="record-option-btn primary" id="btnRecordAsNew">
+              <span style="font-size: 18px;">➕</span>
+              <div>
+                <div style="font-weight: 700; font-size: 12.5px; color: #fff;">Tạo kịch bản mới (Khuyên dùng)</div>
+                <div style="font-size: 11px; color: #cbd5e1; font-weight: normal;">Giữ nguyên bước cũ, ghi vào kịch bản mới riêng biệt</div>
+              </div>
+            </button>
+
+            <!-- Option 2: Ghi nối tiếp -->
+            <button type="button" class="record-option-btn info" id="btnRecordAppend">
+              <span style="font-size: 18px;">⏩</span>
+              <div>
+                <div style="font-weight: 700; font-size: 12.5px; color: #7dd3fc;">Ghi nối tiếp vào kịch bản này</div>
+                <div style="font-size: 11px; color: #94a3b8; font-weight: normal;">Giữ các bước cũ và thêm tiếp các bước mới vào sau</div>
+              </div>
+            </button>
+
+            <!-- Option 3: Ghi đè -->
+            <button type="button" class="record-option-btn warning" id="btnRecordOverwrite">
+              <span style="font-size: 18px;">🔄</span>
+              <div>
+                <div style="font-weight: 700; font-size: 12.5px; color: #fca5a5;">Ghi đè kịch bản này</div>
+                <div style="font-size: 11px; color: #94a3b8; font-weight: normal;">Xóa sạch các bước cũ và thay thế bằng các bước mới</div>
+              </div>
+            </button>
+          </div>
+        </div>
+        <div class="modal-footer" style="justify-content: flex-end; padding: 10px 16px; background: rgba(15, 23, 42, 0.4);">
+          <button class="btn btn-secondary btn-sm" id="btnRecordCancel">Hủy bỏ</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Footer -->
     <footer class="app-footer">
-      <span>AutoFlow v1.1 • Chạy mượt mà không cần quyền Admin</span>
+      <span>AutoFlow v1.2 • Hỗ trợ Đa Luồng, Đa Tab & Đa Cửa Sổ</span>
     </footer>
   </div>
 

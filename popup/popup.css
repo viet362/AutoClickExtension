@@ -577,22 +577,26 @@ body {
   background: rgba(99, 102, 241, 0.08);
 }
 
-.upload-icon {
-  color: #818cf8;
-  margin-bottom: 10px;
+.compact-dropzone {
+  border: 1.5px dashed rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.04);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  text-align: center;
+  font-size: 12px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
-.upload-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: #fff;
-  margin-bottom: 4px;
-}
-
-.upload-subtitle {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-bottom: 14px;
+.compact-dropzone:hover, .compact-dropzone.dragover {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
 }
 
 .data-preview-card {
@@ -603,6 +607,13 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  transition: all 0.2s;
+}
+
+.data-preview-card.dragover {
+  border-color: #38bdf8;
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.3);
+  background: rgba(15, 23, 42, 0.95);
 }
 
 .file-summary {
@@ -898,7 +909,7 @@ body {
   padding: 16px;
 }
 
-.modal-card {
+.modal-card, .modal-box {
   background: #1e293b;
   border: 1px solid rgba(99, 102, 241, 0.4);
   border-radius: var(--radius-md);
@@ -910,6 +921,54 @@ body {
   flex-direction: column;
   overflow: hidden;
   animation: modal-appear 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.record-option-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+}
+
+.record-option-btn:hover {
+  background: rgba(51, 65, 85, 0.9);
+  transform: translateY(-1px);
+}
+
+.record-option-btn.primary {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.25), rgba(139, 92, 246, 0.25));
+  border-color: rgba(99, 102, 241, 0.6);
+}
+
+.record-option-btn.primary:hover {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.4), rgba(139, 92, 246, 0.4));
+  border-color: #6366f1;
+}
+
+.record-option-btn.warning {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.record-option-btn.warning:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+}
+
+.record-option-btn.info {
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.record-option-btn.info:hover {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: #38bdf8;
 }
 
 @keyframes modal-appear {

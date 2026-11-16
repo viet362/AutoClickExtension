@@ -91,9 +91,11 @@
   let executionLogs = [];
   let currentRecordingScenarioId = null;
   let currentRecordingScenarioName = null;
+  let currentRecordingMode = 'overwrite'; // 'overwrite' | 'append'
   let runToken = 0; // Mỗi phiên chạy có 1 token riêng -> chống 2 vòng lặp chạy song song
   let runOptions = { speed: 1, errorMode: 'stop', rowOffset: 0 };
   let errorState = null; // { message, resolve } khi đang chờ người dùng quyết định xử lý lỗi
+  let lastClickedTrigger = null; // Lưu phần tử vừa click để tự động kích hoạt lại nếu popup/tooltip không kịp hiện
 
   let floatingBar = null;
   const $bar = (id) => (floatingBar ? floatingBar.querySelector(`#${id}`) : null);
@@ -237,9 +239,10 @@
 
     if (isRecording) {
       statusBadge.className = 'af-status-badge af-badge-recording';
-      statusText.textContent = 'Đang ghi mẫu';
-      miniStatus.textContent = `🔴 Đang ghi (${recordedSteps.length})`;
-      infoTitle.textContent = currentRecordingScenarioName || 'Kịch bản đang ghi mẫu';
+      statusText.textContent = currentRecordingMode === 'append' ? 'Ghi nối tiếp' : 'Đang ghi mẫu';
+      miniStatus.textContent = currentRecordingMode === 'append' ? `🔴 Nối tiếp (${recordedSteps.length})` : `🔴 Đang ghi (${recordedSteps.length})`;
+      const modeSuffix = currentRecordingMode === 'append' ? ' ⏩ [Nối tiếp]' : '';
+      infoTitle.textContent = (currentRecordingScenarioName || 'Kịch bản đang ghi mẫu') + modeSuffix;
       infoMain.textContent = 'Thao tác chuột/phím trên web...';
       stepsCount.textContent = `${recordedSteps.length} bước`;
       progressContainer.style.display = 'none';
@@ -349,8 +352,36 @@
         const btnRec = $bar('af-btn-start-record');
         if (btnRec) {
           btnRec.onclick = () => {
+            if (stepsLen > 0) {
+              const ask = confirm(
+                `⚠️ Kịch bản "${sc.name}" hiện đã có ${stepsLen} bước!\n\n` +
+                `- Bấm OK để TẠO KỊCH BẢN MỚI (giữ nguyên ${stepsLen} bước cũ)\n` +
+                `- Bấm HỦY (Cancel) để GHI ĐÈ lên kịch bản này`
+              );
+              if (ask) {
+                const newId = `scenario_${Date.now()}`;
+                const newName = `${sc.name} (Bản mới)`;
+                storageGet(['scenarios']).then((sRes) => {
+                  const scs = sRes.scenarios || {};
+                  scs[newId] = {
+                    id: newId,
+                    name: newName,
+                    createdAt: new Date().toISOString(),
+                    steps: []
+                  };
+                  storageSet({ scenarios: scs, activeScenarioId: newId }).then(() => {
+                    currentRecordingScenarioId = newId;
+                    currentRecordingScenarioName = newName;
+                    currentRecordingMode = 'overwrite';
+                    startRecording();
+                  });
+                });
+                return;
+              }
+            }
             currentRecordingScenarioId = activeId || null;
             currentRecordingScenarioName = sc ? sc.name : null;
+            currentRecordingMode = 'overwrite';
             startRecording();
           };
         }
@@ -376,6 +407,17 @@
     try { return document.querySelectorAll(selector).length === 1; } catch (e) { return false; }
   }
 
+  // Nhận diện xem phần tử có nằm trong Bảng Lịch / DatePicker hay không
+  function isCalendarElement(el) {
+    if (!el) return false;
+    return !!el.closest(
+      '.ant-picker-dropdown, .ant-picker-panel, .ant-picker-content, ' +
+      '.el-picker-panel, .el-date-picker, .el-date-table, ' +
+      '.flatpickr-calendar, .flatpickr-days, .datepicker, .ui-datepicker, ' +
+      '.vxe-calendar, [class*="picker"], [class*="calendar"], [class*="date-table"]'
+    );
+  }
+
   function getElementSelector(el) {
     if (!el || el === document.body || el === document.documentElement) return 'body';
 
@@ -385,13 +427,58 @@
       if (isUniqueSelector(sel)) return sel;
     }
 
-    // 2. Thuộc tính đặc trưng
+    // 2. Thuộc tính đặc trưng trên chính phần tử
     const attrs = ['data-testid', 'data-test', 'data-qa', 'name', 'placeholder', 'aria-label', 'for', 'title', 'alt', 'role'];
     for (const attr of attrs) {
       const val = el.getAttribute(attr);
       if (val) {
         const sel = `${el.tagName.toLowerCase()}[${attr}="${CSS.escape(val)}"]`;
         if (isUniqueSelector(sel)) return sel;
+      }
+    }
+
+    // 2.1 Thuộc tính title / aria-label / data-date trên ô cha td (Đặc biệt quan trọng cho DatePicker như Ant Design...)
+    const parentCell = el.closest('td, th, [role="gridcell"]');
+    if (parentCell && parentCell !== el) {
+      for (const attr of ['title', 'aria-label', 'data-date', 'data-value']) {
+        const val = parentCell.getAttribute(attr);
+        if (val) {
+          const sel = `${parentCell.tagName.toLowerCase()}[${attr}="${CSS.escape(val)}"]`;
+          if (isUniqueSelector(sel)) return sel;
+          const childSel = `${sel} > ${el.tagName.toLowerCase()}`;
+          if (isUniqueSelector(childSel)) return childSel;
+        }
+      }
+    }
+
+    // 2.2 Xử lý chính xác ô trong Bảng Lịch Chọn Ngày (Calendar / DatePicker)
+    if (isCalendarElement(el)) {
+      const calTr = el.closest('tr');
+      const calTd = el.closest('td, th');
+      if (calTr && calTd) {
+        const rIdx = Array.from(calTr.parentElement ? calTr.parentElement.children : []).indexOf(calTr) + 1;
+        const cIdx = Array.from(calTr.children).indexOf(calTd) + 1;
+        const calWrap = el.closest('.ant-picker-panel, .ant-picker-dropdown, .el-picker-panel, .el-date-picker, .flatpickr-calendar, .datepicker, table');
+        const calCls = (calWrap && calWrap.className && typeof calWrap.className === 'string')
+          ? '.' + calWrap.className.trim().split(/\s+/)[0] + ' '
+          : '';
+        const exactCellSel = `${calCls}tr:nth-child(${rIdx}) > td:nth-child(${cIdx})`.trim();
+        return el !== calTd ? `${exactCellSel} ${el.tagName.toLowerCase()}` : exactCellSel;
+      }
+    }
+
+    // 2.3 Trường nhập liệu trong Form có nhãn (Thời gian quét, Người quét...)
+    const formItem = el.closest('.el-form-item, .ant-form-item, .form-group, .form-item');
+    if (formItem) {
+      const labelEl = formItem.querySelector('.el-form-item__label, .ant-form-item-label, label, .form-label');
+      const labelText = norm(labelEl?.innerText);
+      if (labelText && labelText.length >= 2 && labelText.length <= 40) {
+        const targetInput = el.closest('input, select, textarea') || el.querySelector('input, select, textarea');
+        const tag = targetInput ? targetInput.tagName.toLowerCase() : el.tagName.toLowerCase();
+        const placeholder = targetInput?.getAttribute('placeholder') || el.getAttribute('placeholder');
+        const phAttr = placeholder ? `[placeholder="${CSS.escape(placeholder)}"]` : '';
+        const formSel = `form::-af-field("${labelText}") ${tag}${phAttr}`.trim();
+        return formSel;
       }
     }
 
@@ -417,9 +504,11 @@
 
     // 3.5 Phần tử trong dòng bảng (tr): nhận dạng theo từ khóa dòng hoặc số thứ tự dòng
     const tr = el.closest('tr, .el-table__row');
-    if (tr) {
+    if (tr && !isCalendarElement(el)) {
+      const cell = el.closest('td, th, .cell');
+      const colIdx = cell ? (Array.from(tr.children).indexOf(cell) + 1) : 1;
       const btn = el.closest('button, a, [role="button"]');
-      let subSelector = btn ? btn.tagName.toLowerCase() : 'td, .cell';
+      let subSelector = '';
 
       if (btn) {
         if (btn.getAttribute('title')) {
@@ -433,6 +522,13 @@
             if (iconClass) subSelector = `.${CSS.escape(iconClass)}`;
           }
         }
+        if (!subSelector) {
+          subSelector = `td:nth-child(${colIdx}) ${btn.tagName.toLowerCase()}`;
+        }
+      } else if (cell) {
+        subSelector = `td:nth-child(${colIdx})${el !== cell ? ' ' + el.tagName.toLowerCase() : ''}`;
+      } else {
+        subSelector = 'td';
       }
 
       // Dòng chính (nếu click nằm trong fixed wrapper của Element-UI)
@@ -543,6 +639,7 @@
       [recKey()]: {
         scenarioId: currentRecordingScenarioId,
         scenarioName: currentRecordingScenarioName,
+        mode: currentRecordingMode,
         steps: recordedSteps,
         savedAt: Date.now()
       }
@@ -719,7 +816,14 @@
         const targetId = currentRecordingScenarioId || res.activeScenarioId || `scenario_${Date.now()}`;
 
         if (scenarios[targetId]) {
-          scenarios[targetId].steps = steps;
+          if (currentRecordingMode === 'append') {
+            const prevSteps = Array.isArray(scenarios[targetId].steps) ? scenarios[targetId].steps : [];
+            scenarios[targetId].steps = prevSteps.concat(steps);
+            showToast(`✅ Đã nối tiếp ${steps.length} bước mới (tổng ${scenarios[targetId].steps.length} bước) vào "${scenarios[targetId].name}".`, 'success', 6000);
+          } else {
+            scenarios[targetId].steps = steps;
+            showToast(`✅ Đã lưu ${steps.length} bước vào "${scenarios[targetId].name}". Mở AutoFlow để gán cột Excel.`, 'success', 6000);
+          }
           scenarios[targetId].updatedAt = new Date().toISOString();
         } else {
           scenarios[targetId] = {
@@ -728,10 +832,8 @@
             createdAt: new Date().toISOString(),
             steps
           };
+          showToast(`✅ Đã lưu ${steps.length} bước vào "${scenarios[targetId].name}". Mở AutoFlow để gán cột Excel.`, 'success', 6000);
         }
-
-        storageSet({ scenarios, activeScenarioId: targetId });
-        showToast(`✅ Đã lưu ${steps.length} bước vào "${scenarios[targetId].name}". Mở AutoFlow để gán cột Excel.`, 'success', 6000);
         updateFloatingBarUI();
       });
     } else if (save) {
@@ -765,13 +867,112 @@
     try { return Array.from(root.querySelectorAll(selector)); } catch (e) { return []; }
   }
 
+  // Tìm ô ngày trong bảng lịch / DatePicker đang mở trên màn hình (Element-UI, Ant Design, Flatpickr...)
+  function findActiveCalendarDay(targetDayText) {
+    if (!targetDayText) return null;
+    const cleanDay = String(targetDayText).trim().replace(/^0+/, ''); // "04" -> "4"
+    if (!/^\d{1,2}$/.test(cleanDay)) return null;
+    const dayNum = parseInt(cleanDay, 10);
+    if (dayNum < 1 || dayNum > 31) return null;
+
+    // 1. Quét tất cả các khung lịch đang hiển thị
+    const calContainers = queryAllSafe(
+      '.el-picker-panel, .el-date-picker, .ant-picker-dropdown, .ant-picker-panel, ' +
+      '.flatpickr-calendar, .datepicker, .ui-datepicker, .vxe-calendar, ' +
+      '[class*="picker-panel"], [class*="date-picker"], [class*="calendar-picker"], ' +
+      '.el-date-table, table.ant-picker-content, [role="grid"]'
+    ).filter((c) => {
+      if (!isElementVisible(c)) return false;
+      try {
+        const s = window.getComputedStyle(c);
+        if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0') return false;
+      } catch (e) {}
+      return true;
+    });
+
+    // Fallback: nếu không khớp class trên, tìm table đang mở có hiển thị thứ trong tuần (Sun, Mon, CN, T2...)
+    if (calContainers.length === 0) {
+      const allTables = queryAllSafe('table, [role="grid"]').filter((t) => isElementVisible(t));
+      for (const t of allTables) {
+        const txt = norm(t.innerText).toLowerCase();
+        if ((txt.includes('sun') || txt.includes('cn') || txt.includes('nhật')) &&
+            (txt.includes('mon') || txt.includes('t2') || txt.includes('hai'))) {
+          calContainers.push(t);
+        }
+      }
+    }
+
+    for (const cal of calContainers) {
+      // Tìm tất cả các phần tử đại diện cho ngày (td, button, flatpickr-day, gridcell...)
+      const dayCandidates = queryAllSafe(
+        'td, .flatpickr-day, [role="gridcell"], .ant-picker-cell, .el-date-table-cell',
+        cal
+      );
+
+      // Kiểm tra xem ô có thuộc tháng hiện tại (không bị disabled, không phải prev/next month)
+      const isInCurrentMonth = (el) => {
+        const cls = (el.className || '').toString().toLowerCase();
+        const parentCls = (el.parentElement?.className || '').toString().toLowerCase();
+        const combined = `${cls} ${parentCls}`;
+        if (combined.includes('prev') || combined.includes('next') || combined.includes('disabled')) return false;
+        if (el.getAttribute('aria-disabled') === 'true') return false;
+        return true;
+      };
+
+      // Ưu tiên 1: Ô thuộc tháng hiện tại và khớp đúng ngày
+      const inMonthMatch = dayCandidates.find((el) => {
+        if (!isElementVisible(el)) return false;
+        if (!isInCurrentMonth(el)) return false;
+        const txt = norm(el.innerText);
+        return txt === cleanDay || txt === targetDayText;
+      });
+
+      if (inMonthMatch) {
+        const inner = inMonthMatch.querySelector('span, div, button') || inMonthMatch;
+        return isElementVisible(inner) ? inner : inMonthMatch;
+      }
+
+      // Ưu tiên 2: Bất kỳ ô nào khớp text trong bảng lịch
+      const anyMatch = dayCandidates.find((el) => {
+        if (!isElementVisible(el)) return false;
+        const txt = norm(el.innerText);
+        return txt === cleanDay || txt === targetDayText;
+      });
+
+      if (anyMatch) {
+        const inner = anyMatch.querySelector('span, div, button') || anyMatch;
+        return isElementVisible(inner) ? inner : anyMatch;
+      }
+    }
+
+    return null;
+  }
+
   // Tìm nút / icon thao tác trong dòng (hỗ trợ cả cột Fixed của Element-UI, Ant Design...)
-  function findActionBtnInRow(targetRow, subSelector) {
+  function findActionBtnInRow(targetRow, subSelector, targetText = '') {
     if (!targetRow) return null;
     const FALLBACK = 'button, [role="button"], a, i, svg, .el-button, .cell *';
 
     const directCandidates = subSelector ? queryAllSafe(subSelector, targetRow) : [];
     const candidates = directCandidates.length > 0 ? directCandidates : queryAllSafe(FALLBACK, targetRow);
+
+    // Ưu tiên 1: Khớp theo targetText (rất quan trọng khi click ô ngày số trong bảng lịch hoặc nút có tên cụ thể)
+    if (targetText) {
+      const tNorm = norm(targetText).toLowerCase();
+      const matchText = candidates.find((btn) => {
+        if (!isElementVisible(btn)) return false;
+        const txt = norm(btn.innerText).toLowerCase();
+        const title = (btn.getAttribute('title') || '').toLowerCase();
+        const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
+        return txt === tNorm || title === tNorm || aria === tNorm;
+      });
+      if (matchText) return matchText;
+
+      // Đang tìm ngày cụ thể (1-31) mà dòng này không chứa -> trả về null để findElement gọi findActiveCalendarDay
+      if (/^\d{1,2}$/.test(targetText.replace(/^0+/, ''))) {
+        return null;
+      }
+    }
 
     const visibleBtn = candidates.find((btn) => isElementVisible(btn));
     if (visibleBtn) return visibleBtn;
@@ -788,6 +989,11 @@
           if (!fbRow) continue;
           const fbDirect = subSelector ? queryAllSafe(subSelector, fbRow) : [];
           const fbList = fbDirect.length > 0 ? fbDirect : queryAllSafe(FALLBACK, fbRow);
+          if (targetText) {
+            const tNorm = norm(targetText).toLowerCase();
+            const matchFb = fbList.find((btn) => isElementVisible(btn) && norm(btn.innerText).toLowerCase() === tNorm);
+            if (matchFb) return matchFb;
+          }
           const foundFbBtn = fbList.find((btn) => isElementVisible(btn));
           if (foundFbBtn) return foundFbBtn;
           if (fbList.length > 0) return fbList[0];
@@ -798,10 +1004,20 @@
     return candidates[0] || null;
   }
 
-  function findElement(selector) {
+  function findElement(selector, targetText = '') {
     if (!selector) return null;
 
-    // 0. Nút/icon theo từ khóa trong dòng: tr::-af-row("Calibration") button
+    const cleanDay = (targetText || '').trim().replace(/^0+/, '');
+    const isDayNumber = /^\d{1,2}$/.test(cleanDay) && parseInt(cleanDay, 10) >= 1 && parseInt(cleanDay, 10) <= 31;
+
+    // 0. ƯU TIÊN SỐ 1 CHO NGÀY THÁNG TRONG POPUP LỊCH (DATEPICKER)
+    // Nếu targetText là số ngày và đang có popup DatePicker mở HOẶC selector là lịch:
+    if (isDayNumber) {
+      const calDay = findActiveCalendarDay(cleanDay);
+      if (calDay) return calDay;
+    }
+
+    // 0.1 Nút/icon theo từ khóa trong dòng: tr::-af-row("Calibration") button
     if (selector.includes('::-af-row(')) {
       const match = selector.match(/tr::-af-row\((?:["']?)(.+?)(?:["']?)\)\s*(.*)/);
       if (match) {
@@ -830,11 +1046,11 @@
           });
         }
 
-        return targetRow ? findActionBtnInRow(targetRow, subSelector) : null;
+        return targetRow ? findActionBtnInRow(targetRow, subSelector, targetText) : null;
       }
     }
 
-    // 0.1 Nút/icon theo số thứ tự dòng: tr::-af-row-index(4) button
+    // 0.2 Nút/icon theo số thứ tự dòng: tr::-af-row-index(4) button
     if (selector.includes('::-af-row-index(')) {
       const match = selector.match(/tr::-af-row-index\((\d+)\)\s*(.*)/);
       if (match) {
@@ -842,7 +1058,32 @@
         const subSelector = match[2].trim() || 'button, i, a, [role="button"]';
         const mainTbody = document.querySelector('.el-table__body-wrapper tbody, table tbody');
         const allRows = mainTbody ? Array.from(mainTbody.querySelectorAll('tr')) : queryAllSafe('tbody tr, .el-table__body tr, .el-table__row');
-        return allRows[rowIdx] ? findActionBtnInRow(allRows[rowIdx], subSelector) : null;
+        const res = allRows[rowIdx] ? findActionBtnInRow(allRows[rowIdx], subSelector, targetText) : null;
+        if (res) {
+          if (isDayNumber && norm(res.innerText) !== cleanDay) {
+            const calDay = findActiveCalendarDay(cleanDay);
+            if (calDay) return calDay;
+          }
+          return res;
+        }
+      }
+    }
+
+    // 0.3 Nút/ô nhập theo nhãn form: form::-af-field("Thời gian quét") input
+    if (selector.includes('::-af-field(')) {
+      const match = selector.match(/form::-af-field\((?:["']?)(.+?)(?:["']?)\)\s*(.*)/);
+      if (match) {
+        const fieldLabel = norm(match[1]).toLowerCase();
+        const subSelector = match[2].trim() || 'input, select, textarea, [contenteditable="true"]';
+        const allLabels = queryAllSafe('label, .el-form-item__label, .ant-form-item-label, .form-label, th');
+        const targetLabel = allLabels.find((l) => norm(l.innerText).toLowerCase().includes(fieldLabel));
+        if (targetLabel) {
+          const container = targetLabel.closest('.el-form-item, .ant-form-item, .form-group, tr, div');
+          if (container) {
+            const field = queryAllSafe(subSelector, container).find((el) => isElementVisible(el)) || container.querySelector(subSelector);
+            if (field) return field;
+          }
+        }
       }
     }
 
@@ -869,9 +1110,95 @@
 
     // 2. CSS selector chuẩn (ưu tiên phần tử đang hiển thị)
     const candidates = queryAllSafe(selector);
-    const visible = candidates.find((el) => isElementVisible(el));
-    if (visible) return visible;
-    if (candidates.length > 0) return candidates[0];
+    let found = candidates.find((el) => isElementVisible(el)) || (candidates.length > 0 ? candidates[0] : null);
+
+    // KIỂM TRA ĐỘ KHỚP VỚI TARGET TEXT (Khắc phục trường hợp click ngày hoặc text/placeholder không khớp)
+    if (isDayNumber) {
+      if (!found || norm(found.innerText) !== cleanDay) {
+        const calDay = findActiveCalendarDay(cleanDay);
+        if (calDay) return calDay;
+      }
+    } else if (found && targetText) {
+      const foundVal = norm(found.innerText) || found.getAttribute('placeholder') || found.getAttribute('aria-label') || found.value || '';
+      if (foundVal !== targetText && targetText.length <= 25) {
+        // Tìm phần tử cùng cấp hoặc con khớp text hoặc placeholder
+        const sameText = queryAllSafe(selector).find((el) => {
+          if (!isElementVisible(el)) return false;
+          const v = norm(el.innerText) || el.getAttribute('placeholder') || el.getAttribute('aria-label') || el.value || '';
+          return v === targetText || v.includes(targetText);
+        });
+        if (sameText) return sameText;
+      }
+    }
+
+    if (found) return found;
+
+    // 2.1 Fallback trực tiếp tìm ô input theo placeholder / title / aria-label khớp với targetText (ví dụ: "Select date")
+    if (targetText && targetText.length >= 2) {
+      const cleanTarget = targetText.trim();
+      const escapedTarget = CSS.escape(cleanTarget);
+      const inputCandidates = queryAllSafe(
+        `input[placeholder="${escapedTarget}"], textarea[placeholder="${escapedTarget}"], ` +
+        `input[placeholder*="${escapedTarget}" i], textarea[placeholder*="${escapedTarget}" i], ` +
+        `input[aria-label*="${escapedTarget}" i], [title*="${escapedTarget}" i]`
+      ).filter((el) => isElementVisible(el));
+      if (inputCandidates.length > 0) return inputCandidates[0];
+    }
+
+    // 2.2 Fallback chuyên dụng cho trường Chọn Ngày / Giờ (DatePicker / TimePicker)
+    const isDateRelated = /date|time|ngày|giờ|năm|tháng|hôm nay|select\s*date/i.test(targetText) || /date|time|picker|calendar/i.test(selector);
+    if (isDateRelated) {
+      // 2.2.1 Nếu có popup bảng lịch đang mở trên màn hình (Element UI, Ant Design, flatpickr...)
+      const activeCalendarPanels = queryAllSafe(
+        '.el-picker-panel:not([style*="display: none"]), .el-date-picker:not([style*="display: none"]), ' +
+        '.ant-picker-dropdown:not(.ant-picker-dropdown-hidden), .ant-picker-panel, ' +
+        '.flatpickr-calendar.open, .datepicker:not([style*="display: none"])'
+      ).filter((p) => isElementVisible(p));
+
+      if (activeCalendarPanels.length > 0) {
+        for (const panel of activeCalendarPanels) {
+          if (selector.includes('input') || /nhập|type|date|time/i.test(targetText)) {
+            const panelInput = queryAllSafe('input', panel).find((inp) => isElementVisible(inp));
+            if (panelInput) return panelInput;
+          }
+        }
+      }
+
+      // 2.2.2 Tìm các ô DatePicker trên form (Element UI: .el-date-editor input, Ant Design: .ant-picker input...)
+      const formDateInputs = queryAllSafe(
+        '.el-date-editor input, .el-date-picker input, .ant-picker input, ' +
+        '.ant-calendar-picker input, input.flatpickr-input, input.datepicker, ' +
+        'input[type="date"], input[type="datetime-local"], ' +
+        '[class*="date-editor"] input, [class*="date-picker"] input, [class*="datepicker"] input, ' +
+        'input[placeholder*="date" i], input[placeholder*="ngày" i]'
+      ).filter((inp) => isElementVisible(inp));
+
+      if (formDateInputs.length > 0) {
+        let pickedIdx = 0;
+        const nthMatch = selector.match(/nth-(?:of-type|child)\((\d+)\)/);
+        if (nthMatch && formDateInputs.length > 1) {
+          const rawNth = parseInt(nthMatch[1], 10);
+          pickedIdx = (rawNth - 1) % formDateInputs.length;
+        }
+        return formDateInputs[pickedIdx] || formDateInputs[0];
+      }
+    }
+
+    // 2.3 Fallback tìm trường nhập liệu theo nhãn Label của form
+    if (targetText && (selector.includes('input') || selector.includes('select') || selector.includes('textarea'))) {
+      const allLabels = queryAllSafe('label, .el-form-item__label, .ant-form-item-label, .form-label, th')
+        .filter((l) => isElementVisible(l));
+      for (const lbl of allLabels) {
+        const lblText = norm(lbl.innerText).toLowerCase();
+        if (lblText.includes(targetText.toLowerCase())) {
+          const formItem = lbl.closest('.el-form-item, .ant-form-item, .form-group, tr, div');
+          if (formItem) {
+            const inp = formItem.querySelector('input:not([type="hidden"]), select, textarea');
+            if (inp && isElementVisible(inp)) return inp;
+          }
+        }
+      }
+    }
 
     // 3. Fallback cho nút icon trong bảng kết quả
     if (selector.includes('td') && (selector.includes('button') || selector.includes('i'))) {
@@ -883,6 +1210,33 @@
     if (selector.includes('input')) {
       const activeDialogInput = document.querySelector('.el-dialog:not([style*="display: none"]) input, [role="dialog"] input, .modal.show input, .modal:not([style*="display: none"]) input');
       if (activeDialogInput && isElementVisible(activeDialogInput)) return activeDialogInput;
+    }
+
+    // 5. Fallback cho ngày trong bảng lịch nếu các bước trên chưa tìm ra
+    if (isDayNumber) {
+      const calDay = findActiveCalendarDay(cleanDay);
+      if (calDay) return calDay;
+    }
+
+    // 6. Fallback tìm nút / liên kết bên trong Popup Popover / Tooltip đang mở
+    if (selector.includes('button') || selector.includes('a') || selector.includes('i') || /chi tiết|xem|sửa|xóa|xác nhận|thao tác/i.test(targetText)) {
+      const openPopovers = queryAllSafe(
+        '.el-popover:not([style*="display: none"]), .el-tooltip__popper:not([style*="display: none"]), ' +
+        '.ant-popover:not(.ant-popover-hidden), .ant-tooltip:not(.ant-tooltip-hidden), ' +
+        '.popover.show, .tooltip.show, [role="tooltip"]:not([style*="display: none"]), ' +
+        '[role="dialog"]:not([style*="display: none"]), .dropdown-menu.show'
+      ).filter((p) => isElementVisible(p));
+
+      for (const pop of openPopovers) {
+        if (targetText) {
+          const tNorm = norm(targetText).toLowerCase();
+          const popCandidates = queryAllSafe('button, a, [role="button"], span, div', pop);
+          const matchBtn = popCandidates.find((b) => isElementVisible(b) && (norm(b.innerText).toLowerCase() === tNorm || norm(b.innerText).toLowerCase().includes(tNorm)));
+          if (matchBtn) return matchBtn;
+        }
+        const firstPopBtn = queryAllSafe('button, a, [role="button"]', pop).find((b) => isElementVisible(b));
+        if (firstPopBtn) return firstPopBtn;
+      }
     }
 
     return null;
@@ -957,25 +1311,71 @@
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  // Phát chuỗi sự kiện hover (mouseenter, pointerenter) lên chính phần tử và các khối cha (cell, row, popover reference)
+  function dispatchHover(el) {
+    if (!el || !el.isConnected) return;
+    try {
+      const rect = el.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      const base = { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y, screenX: x, screenY: y };
+      const nonBubbling = { bubbles: false, cancelable: false, composed: true, view: window, clientX: x, clientY: y, screenX: x, screenY: y };
+
+      const hierarchy = [el];
+      let p = el.parentElement;
+      while (p && p !== document.body) {
+        if (p.classList.contains('cell') || p.tagName === 'TD' || p.tagName === 'TR' || p.hasAttribute('aria-haspopup') || p.classList.contains('el-popover__reference') || p.hasAttribute('data-popover')) {
+          hierarchy.push(p);
+        }
+        p = p.parentElement;
+      }
+
+      hierarchy.forEach((target) => {
+        target.dispatchEvent(new PointerEvent('pointerover', { ...base, pointerId: 1, pointerType: 'mouse' }));
+        target.dispatchEvent(new MouseEvent('mouseover', base));
+        target.dispatchEvent(new PointerEvent('pointerenter', { ...nonBubbling, pointerId: 1, pointerType: 'mouse' }));
+        target.dispatchEvent(new MouseEvent('mouseenter', nonBubbling));
+      });
+    } catch (e) {}
+  }
+
   function simulateClick(el) {
+    if (!el) return;
     const rect = el.getBoundingClientRect();
     const x = rect.left + rect.width / 2;
     const y = rect.top + rect.height / 2;
     const base = { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y, screenX: x, screenY: y, button: 0 };
     const ptr = { ...base, pointerId: 1, pointerType: 'mouse', isPrimary: true };
 
-    el.dispatchEvent(new PointerEvent('pointerover', ptr));
-    el.dispatchEvent(new MouseEvent('mouseover', base));
+    // 1. Kích hoạt chuỗi hover / enter trước (giúp tooltip, popover dạng hover/click luôn được kích hoạt đầy đủ)
+    dispatchHover(el);
+
+    // 2. Chuỗi sự kiện bấm chuột (pointerdown, mousedown)
     el.dispatchEvent(new PointerEvent('pointerdown', { ...ptr, buttons: 1 }));
     el.dispatchEvent(new MouseEvent('mousedown', { ...base, buttons: 1 }));
+
     const focusTarget = el.closest('button, a, input, select, textarea, [tabindex]') || el;
-    if (typeof focusTarget.focus === 'function') focusTarget.focus({ preventScroll: true });
+    if (typeof focusTarget.focus === 'function') {
+      try { focusTarget.focus({ preventScroll: true }); } catch (e) {}
+    }
+
     el.dispatchEvent(new PointerEvent('pointerup', ptr));
     el.dispatchEvent(new MouseEvent('mouseup', base));
 
-    // SVGElement không có hàm click() -> dispatch thủ công
-    if (typeof el.click === 'function') el.click();
-    else el.dispatchEvent(new MouseEvent('click', base));
+    // 3. Sự kiện click
+    if (typeof el.click === 'function') {
+      try { el.click(); } catch (e) {
+        el.dispatchEvent(new MouseEvent('click', base));
+      }
+    } else {
+      el.dispatchEvent(new MouseEvent('click', base));
+    }
+
+    // 4. Kích hoạt thêm wrapper cha nếu là ô DatePicker / Popover (Element UI, Ant Design)
+    const dateWrap = el.closest('.el-date-editor, .ant-picker, .el-input--prefix');
+    if (dateWrap && dateWrap !== el) {
+      dateWrap.dispatchEvent(new MouseEvent('click', base));
+    }
   }
 
   const KEY_CODES = { Enter: 13, Tab: 9, Escape: 27, Backspace: 8, Delete: 46, ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, ' ': 32 };
@@ -1036,17 +1436,74 @@
     }
   }
 
+  function isElementInViewport(el) {
+    if (!el) return false;
+    try {
+      const r = el.getBoundingClientRect();
+      const vw = window.innerWidth || document.documentElement.clientWidth;
+      const vh = window.innerHeight || document.documentElement.clientHeight;
+      return r.top >= 0 && r.left >= 0 && r.bottom <= vh && r.right <= vw;
+    } catch (e) { return false; }
+  }
+
   // Smart Wait: quét mỗi 150ms, thấy là chạy ngay, thời gian tạm dừng không bị tính vào timeout
   async function waitForElement(selector, timeout, ctx) {
     let elapsed = 0;
     let last = Date.now();
+    let retriggered = false;
+
+    // Trích xuất targetText từ mô tả bước (ví dụ: Click vào "4" -> targetText = "4")
+    let targetText = '';
+    const labelMatch = (ctx.label || '').match(/["'“]([^"'“”]+)["'”]/);
+    if (labelMatch && labelMatch[1]) {
+      targetText = labelMatch[1].trim();
+    }
+    if (!targetText) {
+      const dayMatch = (ctx.label || '').match(/(?:ngày|ô|chọn|click|bước|\s)\s*([1-9]|[12]\d|3[01])\b/i);
+      if (dayMatch && dayMatch[1]) {
+        targetText = dayMatch[1].trim();
+      }
+    }
+
     while (isAlive(ctx.token)) {
-      const found = findElement(selector);
+      const found = findElement(selector, targetText);
       if (found && (isElementVisible(found) || found.offsetParent !== null)) return found;
 
       const now = Date.now();
       if (!isPaused) elapsed += now - last;
       last = now;
+
+      // CƠ CHẾ TỰ ĐỘNG PHỤC HỒI POPUP & DATEPICKER (SELF-HEALING):
+      // Nếu bước hiện tại đợi nút bấm (hoặc thông tin / lịch) mà sau 1s chưa thấy:
+      // Kích hoạt lại ô bấm trước đó (lặp lại định kỳ mỗi 2.5s nếu vẫn chưa thấy)
+      if (elapsed > 1000 && lastClickedTrigger && lastClickedTrigger.el && lastClickedTrigger.el.isConnected) {
+        const lastRetrigger = lastClickedTrigger.lastRetrigger || lastClickedTrigger.timestamp;
+        if (now - lastRetrigger >= 2500) {
+          lastClickedTrigger.lastRetrigger = now;
+          setInfoMain(`[Dòng ${absRow(currentRunIndex)} • Bước ${ctx.stepNum}/${ctx.totalSteps}] Kích hoạt lại ô chọn ngày / thông tin...`);
+          simulateClick(lastClickedTrigger.el);
+          await sleep(250);
+          continue;
+        }
+      }
+
+      // Tự động mở DatePicker trên form nếu đang cần chọn ngày mà popup lịch chưa hiện
+      const isDateWait = (/^\d{1,2}$/.test(targetText) || /date|time|ngày|giờ|select\s*date/i.test(targetText) || /date|time|picker/i.test(selector)) &&
+        !queryAllSafe('.el-picker-panel:not([style*="display: none"]), .ant-picker-dropdown:not(.ant-picker-dropdown-hidden)').some((p) => isElementVisible(p));
+      if (isDateWait && elapsed > 1500) {
+        const lastDateClick = ctx._lastDateClick || 0;
+        if (now - lastDateClick >= 3000) {
+          ctx._lastDateClick = now;
+          const formDateInp = queryAllSafe('.el-date-editor input, .ant-picker input, [class*="date-editor"] input, input[placeholder*="date" i]').find((inp) => isElementVisible(inp));
+          if (formDateInp) {
+            setInfoMain(`[Dòng ${absRow(currentRunIndex)} • Bước ${ctx.stepNum}/${ctx.totalSteps}] Mở lại bảng chọn ngày...`);
+            simulateClick(formDateInp);
+            await sleep(250);
+            continue;
+          }
+        }
+      }
+
       if (elapsed >= timeout) return null;
 
       if (!errorState) {
@@ -1169,7 +1626,10 @@
       return { ok: false, error: `Không tìm thấy phần tử sau ${Math.round(timeout / 1000)} giây` };
     }
 
-    el.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+    // Chỉ cuộn trang khi phần tử nằm ngoài màn hình để tránh làm tắt các popup/tooltip đang mở
+    if (!isElementInViewport(el) && typeof el.scrollIntoView === 'function') {
+      try { el.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'nearest' }); } catch (e) {}
+    }
     el.classList.add('af-playback-highlight');
     let target = el;
 
@@ -1181,12 +1641,23 @@
 
       // Phần tử có thể bị framework render lại trong lúc chờ -> tìm lại
       if (!target.isConnected) {
-        target = findElement(selector);
+        let stepTargetText = (step.description || '').match(/["'“]([^"'“”]+)["'”]/)?.[1]?.trim() || '';
+        if (!stepTargetText) {
+          const m = (step.description || '').match(/(?:ngày|ô|chọn|click|bước|\s)\s*([1-9]|[12]\d|3[01])\b/i);
+          if (m) stepTargetText = m[1].trim();
+        }
+        target = findElement(selector, stepTargetText);
         if (!target) return { ok: false, error: 'Phần tử biến mất trước khi kịp thao tác' };
       }
 
       if (step.type === 'click') {
         simulateClick(target);
+        lastClickedTrigger = {
+          el: target,
+          selector,
+          desc: step.description || '',
+          timestamp: Date.now()
+        };
         ctx.onActionDone();
         await smartSleep(300 * speed, token);
         if (QUERY_BUTTON_RE.test(`${step.description || ''} ${step.selector || ''}`)) {
@@ -1255,8 +1726,12 @@
   function sendProgress() {
     safeSendMessage({
       action: 'EXECUTION_PROGRESS',
+      tabId: tabId,
+      scenarioId: currentScenario?.id,
+      scenarioName: currentScenario?.name,
       row: absRow(currentRunIndex),
       totalRows: runOptions.rowOffset + currentDataset.length,
+      rowOffset: runOptions.rowOffset,
       runIndex: currentRunIndex,
       runTotal: currentDataset.length,
       step: currentStepIndex + 1,
@@ -1264,7 +1739,9 @@
       cycle: currentCycle + 1,
       repeatCount: runOptions.repeatCount || 1,
       isPaused,
-      hasError: !!errorState
+      hasError: !!errorState,
+      lastError: errorState?.message || '',
+      multiTabJobId: runOptions.multiTabJobId || null
     });
   }
 
@@ -1322,7 +1799,7 @@
               }
             });
           } catch (err) {
-            console.error('[AutoFlow] Lỗi khi thực thi bước:', err);
+            console.log('[AutoFlow] [Lỗi khi thực thi bước]:', err);
             result = { ok: false, error: err?.message || String(err) };
           }
           if (!isAlive(token)) return;
@@ -1335,7 +1812,7 @@
           const desc = steps[s].description || steps[s].selector || steps[s].type;
           const cycleLabel = repCount > 1 ? `[Vòng ${cycle + 1}/${repCount}] ` : '';
           const msg = `${cycleLabel}Dòng ${absRow(i)} • Bước ${s + 1}/${steps.length} "${desc}": ${result.error}`;
-          console.warn('[AutoFlow]', msg);
+          console.log('[AutoFlow] [Thông báo bước]:', msg);
 
           if (runOptions.errorMode === 'skip') {
             rowError = msg;
@@ -1391,7 +1868,16 @@
       logs: executionLogs.map((l) => ({ ...l, data: currentDataset[l.rowIndex] || {} }))
     };
     storageSet({ lastRunResults: summary });
-    safeSendMessage({ action: 'EXECUTION_COMPLETED', reason, logs: executionLogs, summary });
+    safeSendMessage({
+      action: 'EXECUTION_COMPLETED',
+      tabId: tabId,
+      scenarioId: currentScenario?.id,
+      scenarioName: currentScenario?.name,
+      multiTabJobId: runOptions.multiTabJobId || null,
+      reason,
+      logs: executionLogs,
+      summary
+    });
 
     updateFloatingBarUI();
 
@@ -1427,13 +1913,15 @@
     const legacyOffset = options.startRowIndex ? parseInt(options.startRowIndex, 10) - 1 : 0;
     const extraSec = Math.max(0, parseFloat(options.extraDelaySec) || 0);
     const repCount = Math.max(1, parseInt(options.repeatCount, 10) || 1);
+    const multiJobId = options.multiTabJobId || null;
     runOptions = {
       speed: Number(options.speed) > 0 ? Number(options.speed) : 1,
       errorMode: options.errorMode === 'skip' ? 'skip' : 'stop',
       rowOffset: Math.max(0, parseInt(options.rowOffset ?? legacyOffset, 10) || 0),
       extraDelaySec: extraSec,
       extraDelayMs: Math.max(0, parseInt(options.extraDelayMs, 10) || Math.round(extraSec * 1000)),
-      repeatCount: repCount
+      repeatCount: repCount,
+      multiTabJobId: multiJobId
     };
 
     executionLogs = resume && Array.isArray(resume.logs) ? resume.logs : [];
@@ -1449,6 +1937,18 @@
     updateFloatingBarUI();
     persistRunStatic();
     persistRunPos();
+
+    safeSendMessage({
+      action: 'EXECUTION_STARTED',
+      tabId: tabId,
+      scenarioId: currentScenario?.id,
+      scenarioName: currentScenario?.name,
+      totalRows: currentDataset.length,
+      rowOffset: runOptions.rowOffset,
+      repeatCount: runOptions.repeatCount,
+      multiTabJobId: multiJobId,
+      options: runOptions
+    });
 
     await runLoop(token, currentRunIndex, currentStepIndex, currentCycle);
   }
@@ -1474,7 +1974,7 @@
   window.addEventListener('beforeunload', handlePageHide, true);
 
   // ============================================================
-  // GIAO TIẾP VỚI POPUP
+  // GIAO TIẾP VỚI POPUP & BACKGROUND / DASHBOARD
   // ============================================================
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     switch (msg && msg.action) {
@@ -1484,6 +1984,7 @@
       case 'START_RECORDING':
         currentRecordingScenarioId = msg.scenarioId || null;
         currentRecordingScenarioName = msg.scenarioName || null;
+        currentRecordingMode = msg.mode || 'overwrite';
         startRecording();
         sendResponse({ status: 'RECORDING_STARTED' });
         break;
@@ -1503,6 +2004,14 @@
         togglePause();
         sendResponse({ isPaused });
         break;
+      case 'PAUSE_EXECUTION':
+        if (isRunning && !isPaused) togglePause();
+        sendResponse({ isPaused });
+        break;
+      case 'RESUME_EXECUTION':
+        if (isRunning && isPaused) togglePause();
+        sendResponse({ isPaused });
+        break;
       case 'GET_STATUS':
         sendResponse({
           isRecording,
@@ -1516,7 +2025,10 @@
           currentStepIndex,
           totalSteps: currentScenario?.steps?.length || 0,
           currentCycle: currentCycle + 1,
-          repeatCount: runOptions.repeatCount || 1
+          repeatCount: runOptions.repeatCount || 1,
+          scenarioId: currentScenario?.id || null,
+          scenarioName: currentScenario?.name || null,
+          multiTabJobId: runOptions.multiTabJobId || null
         });
         break;
       default:
@@ -1542,6 +2054,7 @@
       } else {
         currentRecordingScenarioId = rec.scenarioId || null;
         currentRecordingScenarioName = rec.scenarioName || null;
+        currentRecordingMode = rec.mode || 'overwrite';
         startRecording(rec);
         return;
       }
