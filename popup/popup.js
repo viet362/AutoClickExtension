@@ -65,6 +65,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const progressStatusText = document.getElementById('progressStatusText');
   const progressPctText = document.getElementById('progressPctText');
   const progressBarFill = document.getElementById('progressBarFill');
+  const progressElapsedText = document.getElementById('progressElapsedText');
+  const progressEtaText = document.getElementById('progressEtaText');
   const logsContainer = document.getElementById('logsContainer');
   const btnExportResults = document.getElementById('btnExportResults');
   const btnClearLogs = document.getElementById('btnClearLogs');
@@ -1741,6 +1743,8 @@ document.addEventListener('DOMContentLoaded', () => {
     progressStatusText.textContent = `Bắt đầu từ dòng ${startRow} trên ${tab.title || 'trang web'}...`;
     progressPctText.textContent = '0%';
     progressBarFill.style.width = '0%';
+    if (progressElapsedText) progressElapsedText.textContent = '⏱️ Đã chạy: 00:00';
+    if (progressEtaText) progressEtaText.textContent = '⏳ Còn lại: Đang tính...';
     setHeaderStatus('running', 'Đang chạy');
 
     addLog(`▶️ Chạy "${current.name}" từ dòng ${startRow} (${datasetToRun.length} dòng${repeatCount > 1 ? ` • Lặp ${repeatCount} lần` : ''}).`, 'success');
@@ -1814,6 +1818,13 @@ document.addEventListener('DOMContentLoaded', () => {
         progressStatusText.textContent = `${cyclePrefix}Đang chạy Dòng ${msg.row}/${msg.totalRows} • Bước ${msg.step}/${msg.totalSteps}`;
         setHeaderStatus('running', 'Đang chạy');
       }
+
+      if (progressElapsedText && msg.elapsedText) {
+        progressElapsedText.textContent = `⏱️ Đã chạy: ${msg.elapsedText}`;
+      }
+      if (progressEtaText) {
+        progressEtaText.textContent = msg.etaText ? `⏳ Còn lại: ~${msg.etaText}` : '⏳ Còn lại: Đang tính...';
+      }
     } else if (msg.action === 'EXECUTION_COMPLETED') {
       isTabRunning = false;
       btnStartRunner.style.display = 'flex';
@@ -1822,12 +1833,20 @@ document.addEventListener('DOMContentLoaded', () => {
       progressBarFill.style.width = '100%';
       setHeaderStatus('idle', 'Sẵn sàng');
 
+      if (progressEtaText) {
+        progressEtaText.textContent = '✅ Đã hoàn thành';
+      }
+      if (progressElapsedText && msg.summary && msg.summary.elapsedText) {
+        progressElapsedText.textContent = `⏱️ Đã chạy: ${msg.summary.elapsedText}`;
+      }
+
       const s = msg.summary;
       if (s) {
         const repText = s.repeatCount > 1 ? ` (qua ${s.repeatCount} vòng lặp)` : '';
-        progressStatusText.textContent = `Hoàn tất${repText}: ${s.success} thành công${s.failed ? `, ${s.failed} lỗi` : ''}`;
+        const timeText = s.elapsedText ? ` (${s.elapsedText})` : '';
+        progressStatusText.textContent = `Hoàn tất${repText}${timeText}: ${s.success} thành công${s.failed ? `, ${s.failed} lỗi` : ''}`;
         addLog(
-          `🏁 Kết thúc (${s.reason === 'completed' ? 'Hoàn tất' : 'Đã dừng'})${repText}: ${s.success} dòng thành công${s.failed ? `, ${s.failed} dòng lỗi` : ''}.`,
+          `🏁 Kết thúc (${s.reason === 'completed' ? 'Hoàn tất' : 'Đã dừng'})${repText}${timeText}: ${s.success} dòng thành công${s.failed ? `, ${s.failed} dòng lỗi` : ''}.`,
           s.failed ? 'error' : 'success'
         );
       } else {
@@ -1845,6 +1864,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnStartRunner.style.display = 'flex';
     btnStopRunner.style.display = 'none';
     progressStatusText.textContent = 'Đã dừng khẩn cấp';
+    if (progressEtaText) progressEtaText.textContent = '⏹️ Đã dừng';
     setHeaderStatus('idle', 'Sẵn sàng');
     addLog('⏹️ Đã dừng kịch bản tự động trên tab này.', 'error');
   });
@@ -1912,6 +1932,12 @@ document.addEventListener('DOMContentLoaded', () => {
           progressBarFill.style.width = `${pct}%`;
           const cyclePrefix = repCount > 1 ? `[Vòng ${cycle}/${repCount}] ` : '';
           progressStatusText.textContent = `${cyclePrefix}Đang chạy Dòng ${(st.rowOffset || 0) + (st.currentRunIndex || 0) + 1}/${(st.rowOffset || 0) + total}`;
+          if (progressElapsedText && st.elapsedText) {
+            progressElapsedText.textContent = `⏱️ Đã chạy: ${st.elapsedText}`;
+          }
+          if (progressEtaText) {
+            progressEtaText.textContent = st.etaText ? `⏳ Còn lại: ~${st.etaText}` : '⏳ Còn lại: Đang tính...';
+          }
         }
       });
     } catch (e) {}

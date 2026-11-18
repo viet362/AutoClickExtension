@@ -409,8 +409,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         <div class="worker-stats">
           <span>Tiến độ: <strong class="worker-stats-strong">${job.pct || 0}%</strong></span>
-          <span>Dòng hiện tại: <strong class="worker-stats-strong">${job.row || 1}</strong> / ${(job.rowOffset || 0) + (job.totalRows || 1)}</span>
+          <span>Dòng: <strong class="worker-stats-strong">${job.row || 1}</strong> / ${(job.rowOffset || 0) + (job.totalRows || 1)}</span>
           <span>Bước: <strong>${job.step || 1}</strong>/${job.totalSteps || 1}</span>
+          <span>Còn lại: <strong class="worker-stats-strong" style="color: #38bdf8;">${job.status === 'completed' ? 'Hoàn tất' : (job.etaText ? '⏱️ ' + job.etaText : 'Đang tính...')}</strong></span>
         </div>
 
         <div class="worker-progress-bar">

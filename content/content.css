@@ -217,6 +217,21 @@
   transition: width 0.3s ease;
 }
 
+.af-eta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 6px;
+  font-weight: 500;
+}
+
+#af-eta-text {
+  color: #38bdf8;
+  font-weight: 600;
+}
+
 /* Actions Footer */
 .af-actions {
   display: flex;

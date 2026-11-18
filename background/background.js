@@ -165,6 +165,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           multiTabJobId: message.multiTabJobId || null,
           startedAt: Date.now(),
           updatedAt: Date.now(),
+          elapsedSec: 0,
+          remainingSec: null,
+          etaText: 'Đang tính...',
+          elapsedText: '00:00',
           logs: [],
           summary: null
         };
@@ -207,6 +211,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         job.lastError = message.lastError || '';
         job.status = message.hasError ? 'error' : (message.isPaused ? 'paused' : 'running');
         job.multiTabJobId = message.multiTabJobId || job.multiTabJobId || null;
+        job.elapsedSec = message.elapsedSec ?? Math.floor((Date.now() - (job.startedAt || Date.now())) / 1000);
+        job.remainingSec = message.remainingSec ?? null;
+        job.etaText = message.etaText || job.etaText || 'Đang tính...';
+        job.elapsedText = message.elapsedText || '00:00';
         job.updatedAt = Date.now();
         if (sender.tab?.url) job.url = sender.tab.url;
         if (sender.tab?.title) job.title = sender.tab.title;
@@ -223,6 +231,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const job = activeJobs[senderTabId];
         job.status = message.reason === 'completed' ? 'completed' : 'stopped';
         job.pct = 100;
+        job.remainingSec = 0;
+        job.etaText = message.reason === 'completed' ? 'Hoàn tất' : 'Đã dừng';
         job.logs = message.logs || [];
         job.summary = message.summary || null;
         job.updatedAt = Date.now();

@@ -763,6 +763,21 @@ body {
   transition: width 0.3s;
 }
 
+.progress-time-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  color: #94a3b8;
+  margin-top: 6px;
+  font-weight: 500;
+}
+
+#progressEtaText {
+  color: #38bdf8;
+  font-weight: 600;
+}
+
 .run-controls {
   margin-bottom: 16px;
 }

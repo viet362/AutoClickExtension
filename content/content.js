@@ -110,9 +110,114 @@
   let runOptions = { speed: 1, errorMode: 'stop', rowOffset: 0 };
   let errorState = null; // { message, resolve } khi đang chờ người dùng quyết định xử lý lỗi
   let lastClickedTrigger = null; // Lưu phần tử vừa click để tự động kích hoạt lại nếu popup/tooltip không kịp hiện
+  let executionStartTime = 0; // Thời điểm bắt đầu phiên chạy
+  let totalPausedMs = 0; // Tổng thời gian tạm dừng tích lũy
+  let lastPauseStartTime = 0; // Thời điểm bắt đầu tạm dừng hiện tại
+  let etaTicker = null; // Timer cập nhật ETA mỗi giây
 
   let floatingBar = null;
   const $bar = (id) => (floatingBar ? floatingBar.querySelector(`#${id}`) : null);
+
+  // ============================================================
+  // ĐỊNH DẠNG & TÍNH TOÁN THỜI GIAN LÀM VIỆC CÒN LẠI (ETA)
+  // ============================================================
+  function formatEtaDuration(sec) {
+    if (sec == null || isNaN(sec) || sec < 0) return 'Đang tính...';
+    sec = Math.round(sec);
+    if (sec <= 3) return 'Vài giây';
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    if (m < 60) {
+      return s > 0 ? `${m}p ${s}s` : `${m}p`;
+    }
+    const h = Math.floor(m / 60);
+    const remM = m % 60;
+    return remM > 0 ? `${h}h ${remM}p` : `${h}h`;
+  }
+
+  function formatClockTime(sec) {
+    if (sec == null || isNaN(sec) || sec < 0) sec = 0;
+    sec = Math.round(sec);
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    if (m < 60) {
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+    const h = Math.floor(m / 60);
+    const remM = m % 60;
+    return `${h}:${String(remM).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  function calculateTimeMetrics() {
+    if (!isRunning || !executionStartTime) {
+      return { elapsedSec: 0, remainingSec: null, etaText: 'Đang tính...', elapsedText: '00:00' };
+    }
+
+    const now = Date.now();
+    const currentPausedDelta = (isPaused && lastPauseStartTime > 0) ? (now - lastPauseStartTime) : 0;
+    const activeElapsedMs = Math.max(0, now - executionStartTime - totalPausedMs - currentPausedDelta);
+    const elapsedSec = Math.floor(activeElapsedMs / 1000);
+
+    const totalRows = currentDataset.length || 1;
+    const totalSteps = currentScenario?.steps?.length || 1;
+    const repCount = runOptions.repeatCount || 1;
+    const totalWorkUnits = repCount * totalRows * totalSteps;
+
+    const completedWorkUnits = ((currentCycle * totalRows) + currentRunIndex) * totalSteps + currentStepIndex;
+    const remainingWorkUnits = Math.max(0, totalWorkUnits - completedWorkUnits);
+
+    if (remainingWorkUnits === 0) {
+      return { elapsedSec, remainingSec: 0, etaText: '0s', elapsedText: formatClockTime(elapsedSec) };
+    }
+
+    // Ước tính ban đầu dựa trên tổng độ trễ cấu hình của các bước
+    let baseScenarioDelayMs = 0;
+    if (currentScenario && Array.isArray(currentScenario.steps)) {
+      currentScenario.steps.forEach((st) => {
+        const d = (st.delay != null && !isNaN(st.delay)) ? Number(st.delay) : 400;
+        baseScenarioDelayMs += d + (runOptions.extraDelayMs || 0) + 300;
+      });
+    } else {
+      baseScenarioDelayMs = totalSteps * 800;
+    }
+    const speed = runOptions.speed || 1;
+    const avgStepMs = (baseScenarioDelayMs / totalSteps) * speed;
+    const initialRemainingSec = Math.max(1, Math.round((remainingWorkUnits * avgStepMs) / 1000));
+
+    let remainingSec = initialRemainingSec;
+
+    // Khi đã chạy được ít nhất 2 giây và có bước hoàn thành, dùng tốc độ thực tế đã đo
+    if (completedWorkUnits > 0 && activeElapsedMs >= 2000) {
+      const msPerUnit = activeElapsedMs / completedWorkUnits;
+      const actualRemainingSec = Math.round((remainingWorkUnits * msPerUnit) / 1000);
+
+      if (completedWorkUnits < 3) {
+        const w = completedWorkUnits / 3;
+        remainingSec = Math.round(w * actualRemainingSec + (1 - w) * initialRemainingSec);
+      } else {
+        remainingSec = actualRemainingSec;
+      }
+    }
+
+    return {
+      elapsedSec,
+      remainingSec,
+      etaText: formatEtaDuration(remainingSec),
+      elapsedText: formatClockTime(elapsedSec)
+    };
+  }
+
+  function updateFloatingBarTimeOnly() {
+    if (!isRunning || !floatingBar) return;
+    const timeMetrics = calculateTimeMetrics();
+    const etaTextEl = $bar('af-eta-text');
+    const elapsedTextEl = $bar('af-elapsed-text');
+    const etaRowEl = $bar('af-eta-row');
+    if (etaRowEl) etaRowEl.style.display = 'flex';
+    if (etaTextEl) etaTextEl.textContent = `⏳ Còn lại: ~${timeMetrics.etaText}`;
+    if (elapsedTextEl) elapsedTextEl.textContent = `⏱️ Đã chạy: ${timeMetrics.elapsedText}`;
+  }
 
   // ============================================================
   // TOAST THÔNG BÁO (chỉ hiện khi thành công hoặc thất bại/lỗi)
@@ -171,6 +276,10 @@
             </div>
             <div class="af-progress-container" id="af-progress-container" style="display: none;">
               <div class="af-progress-fill" id="af-progress-fill"></div>
+            </div>
+            <div class="af-eta-row" id="af-eta-row" style="display: none;">
+              <span id="af-elapsed-text">⏱️ Đã chạy: 00:00</span>
+              <span id="af-eta-text">⏳ Còn lại: Đang tính...</span>
             </div>
           </div>
           <div class="af-actions" id="af-actions"></div>
@@ -260,6 +369,8 @@
       infoMain.textContent = 'Thao tác chuột/phím trên web...';
       stepsCount.textContent = `${recordedSteps.length} bước`;
       progressContainer.style.display = 'none';
+      const etaRow = $bar('af-eta-row');
+      if (etaRow) etaRow.style.display = 'none';
 
       actionsContainer.innerHTML = `
         <button class="af-btn af-btn-primary" id="af-btn-save-record">💾 Dừng &amp; Lưu</button>
@@ -308,7 +419,16 @@
       stepsCount.textContent = `${overallPct}%`;
       progressContainer.style.display = 'block';
       if (progressFill) progressFill.style.width = `${overallPct}%`;
-      miniStatus.textContent = `${cyclePrefix}▶️ Dòng ${absRow(currentRunIndex)}/${absTotal}`;
+
+      const timeMetrics = calculateTimeMetrics();
+      miniStatus.textContent = `${cyclePrefix}▶️ Dòng ${absRow(currentRunIndex)}/${absTotal} (Còn ~${timeMetrics.etaText})`;
+
+      const etaRow = $bar('af-eta-row');
+      const etaText = $bar('af-eta-text');
+      const elapsedText = $bar('af-elapsed-text');
+      if (etaRow) etaRow.style.display = 'flex';
+      if (etaText) etaText.textContent = `⏳ Còn lại: ~${timeMetrics.etaText}`;
+      if (elapsedText) elapsedText.textContent = `⏱️ Đã chạy: ${timeMetrics.elapsedText}`;
 
       if (errorState) {
         statusBadge.className = 'af-status-badge af-badge-error';
@@ -343,6 +463,8 @@
       infoMain.textContent = 'Đang tải thông tin kịch bản...';
       stepsCount.textContent = '0 bước';
       progressContainer.style.display = 'none';
+      const idleEtaRow = $bar('af-eta-row');
+      if (idleEtaRow) idleEtaRow.style.display = 'none';
 
       storageGet(['scenarios', 'activeScenarioId', 'currentDataset', 'currentFileName', 'runnerPrefs']).then((res) => {
         if (isRecording || isRunning) return; // Trạng thái đã thay đổi trong lúc đọc storage
@@ -1766,11 +1888,16 @@
   }
 
   function clearRunState() {
+    if (etaTicker) {
+      clearInterval(etaTicker);
+      etaTicker = null;
+    }
     if (tabId !== null) storageRemove([runKey(), runPosKey()]);
     else getTabId().then((id) => { if (id !== null) storageRemove([runKey(), runPosKey()]); });
   }
 
   function sendProgress() {
+    const timeMetrics = calculateTimeMetrics();
     safeSendMessage({
       action: 'EXECUTION_PROGRESS',
       tabId: tabId,
@@ -1788,7 +1915,11 @@
       isPaused,
       hasError: !!errorState,
       lastError: errorState?.message || '',
-      multiTabJobId: runOptions.multiTabJobId || null
+      multiTabJobId: runOptions.multiTabJobId || null,
+      elapsedSec: timeMetrics.elapsedSec,
+      remainingSec: timeMetrics.remainingSec,
+      etaText: timeMetrics.etaText,
+      elapsedText: timeMetrics.elapsedText
     });
   }
 
@@ -1893,6 +2024,11 @@
 
   function finishExecution(token, reason) {
     if (token !== runToken || !isRunning) return;
+    if (etaTicker) {
+      clearInterval(etaTicker);
+      etaTicker = null;
+    }
+    const finalMetrics = calculateTimeMetrics();
     isRunning = false;
     isPaused = false;
     if (errorState) {
@@ -1912,6 +2048,8 @@
       repeatCount: repCount,
       success,
       failed,
+      elapsedSec: finalMetrics.elapsedSec,
+      elapsedText: finalMetrics.elapsedText,
       logs: executionLogs.map((l) => ({ ...l, data: currentDataset[l.rowIndex] || {} }))
     };
     storageSet({ lastRunResults: summary });
@@ -1930,8 +2068,9 @@
 
     if (reason === 'completed') {
       const repLabel = repCount > 1 ? ` qua ${repCount} vòng lặp` : '';
-      if (failed === 0) showToast(`🎉 Hoàn tất ${success} lượt chạy${repLabel} thành công 100%!`, 'success', 6000);
-      else showToast(`⚠️ Hoàn tất: ${success} lượt thành công, ${failed} lượt lỗi. Mở AutoFlow để tải báo cáo.`, 'error', 8000);
+      const timeLabel = finalMetrics.elapsedSec > 0 ? ` trong ${finalMetrics.etaText || finalMetrics.elapsedText}` : '';
+      if (failed === 0) showToast(`🎉 Hoàn tất ${success} lượt chạy${repLabel} thành công 100%${timeLabel}!`, 'success', 6000);
+      else showToast(`⚠️ Hoàn tất: ${success} lượt thành công, ${failed} lượt lỗi${timeLabel}. Mở AutoFlow để tải báo cáo.`, 'error', 8000);
     } else {
       // Khi bấm dừng chủ động thì không cần bung toast
     }
@@ -1975,9 +2114,19 @@
     currentRunIndex = resume ? Math.max(0, resume.rowIndex || 0) : 0;
     currentStepIndex = resume ? Math.max(0, resume.stepIndex || 0) : 0;
     currentCycle = resume ? Math.max(0, resume.cycleIndex || 0) : 0;
+    executionStartTime = resume ? (Date.now() - ((resume.elapsedSec || 0) * 1000)) : Date.now();
+    totalPausedMs = 0;
+    lastPauseStartTime = resume && resume.paused ? Date.now() : 0;
     isRunning = true;
     isPaused = !!(resume && resume.paused);
     errorState = null;
+
+    if (etaTicker) clearInterval(etaTicker);
+    etaTicker = setInterval(() => {
+      if (isRunning && !isPaused) {
+        updateFloatingBarTimeOnly();
+      }
+    }, 1000);
 
     initFloatingBar();
     floatingBar.classList.remove('af-minimized');
@@ -2003,6 +2152,14 @@
   function togglePause() {
     if (!isRunning) return;
     isPaused = !isPaused;
+    if (isPaused) {
+      lastPauseStartTime = Date.now();
+    } else {
+      if (lastPauseStartTime > 0) {
+        totalPausedMs += (Date.now() - lastPauseStartTime);
+        lastPauseStartTime = 0;
+      }
+    }
     updateFloatingBarUI();
     sendProgress();
   }
@@ -2065,7 +2222,8 @@
         if (isRunning && isPaused) togglePause();
         sendResponse({ isPaused });
         break;
-      case 'GET_STATUS':
+      case 'GET_STATUS': {
+        const timeMetrics = calculateTimeMetrics();
         sendResponse({
           isRecording,
           isRunning,
@@ -2083,9 +2241,14 @@
           repeatCount: runOptions.repeatCount || 1,
           scenarioId: currentScenario?.id || null,
           scenarioName: currentScenario?.name || null,
-          multiTabJobId: runOptions.multiTabJobId || null
+          multiTabJobId: runOptions.multiTabJobId || null,
+          elapsedSec: timeMetrics.elapsedSec,
+          remainingSec: timeMetrics.remainingSec,
+          etaText: timeMetrics.etaText,
+          elapsedText: timeMetrics.elapsedText
         });
         break;
+      }
       default:
         return false;
     }
