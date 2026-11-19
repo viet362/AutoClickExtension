@@ -1085,6 +1085,46 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let isTabRecording = false;
   let isTabRunning = false;
+  let popupElapsedSec = 0;
+  let popupRemainingSec = null;
+  let isPopupTabPaused = false;
+  let popupTimer = null;
+
+  function formatPopupEtaDuration(sec) {
+    if (sec == null || isNaN(sec) || sec < 0) return 'Đang tính...';
+    sec = Math.round(sec);
+    if (sec <= 2) return 'Vài giây';
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    if (m < 60) return s > 0 ? `${m}p ${s}s` : `${m}p`;
+    const h = Math.floor(m / 60);
+    const remM = m % 60;
+    return remM > 0 ? `${h}h ${remM}p` : `${h}h`;
+  }
+
+  function formatPopupClockTime(sec) {
+    if (sec == null || isNaN(sec) || sec < 0) sec = 0;
+    sec = Math.round(sec);
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    if (m < 60) return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    const h = Math.floor(m / 60);
+    const remM = m % 60;
+    return `${h}:${String(remM).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  function startPopupTimeTicker() {
+    if (popupTimer) clearInterval(popupTimer);
+    popupTimer = setInterval(() => {
+      if (isTabRunning && !isPopupTabPaused && popupRemainingSec != null) {
+        popupElapsedSec++;
+        if (popupRemainingSec > 0) popupRemainingSec--;
+        if (progressElapsedText) progressElapsedText.textContent = `⏱️ Đã chạy: ${formatPopupClockTime(popupElapsedSec)}`;
+        if (progressEtaText) progressEtaText.textContent = `⏳ Còn lại: ~${formatPopupEtaDuration(popupRemainingSec)}`;
+      }
+    }, 1000);
+  }
 
   // Thông báo nổi không gây chặn luồng (Non-blocking Toast) để không làm đơ các tab đang chạy kịch bản
   let popupToastTimer = null;
@@ -1745,6 +1785,10 @@ document.addEventListener('DOMContentLoaded', () => {
     progressBarFill.style.width = '0%';
     if (progressElapsedText) progressElapsedText.textContent = '⏱️ Đã chạy: 00:00';
     if (progressEtaText) progressEtaText.textContent = '⏳ Còn lại: Đang tính...';
+    popupElapsedSec = 0;
+    popupRemainingSec = null;
+    isPopupTabPaused = false;
+    startPopupTimeTicker();
     setHeaderStatus('running', 'Đang chạy');
 
     addLog(`▶️ Chạy "${current.name}" từ dòng ${startRow} (${datasetToRun.length} dòng${repeatCount > 1 ? ` • Lặp ${repeatCount} lần` : ''}).`, 'success');
@@ -1819,6 +1863,11 @@ document.addEventListener('DOMContentLoaded', () => {
         setHeaderStatus('running', 'Đang chạy');
       }
 
+      isPopupTabPaused = !!msg.isPaused;
+      if (msg.elapsedSec != null) popupElapsedSec = msg.elapsedSec;
+      if (msg.remainingSec != null) popupRemainingSec = msg.remainingSec;
+      startPopupTimeTicker();
+
       if (progressElapsedText && msg.elapsedText) {
         progressElapsedText.textContent = `⏱️ Đã chạy: ${msg.elapsedText}`;
       }
@@ -1827,6 +1876,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } else if (msg.action === 'EXECUTION_COMPLETED') {
       isTabRunning = false;
+      if (popupTimer) { clearInterval(popupTimer); popupTimer = null; }
+      popupRemainingSec = 0;
       btnStartRunner.style.display = 'flex';
       btnStopRunner.style.display = 'none';
       progressPctText.textContent = '100%';
@@ -1857,6 +1908,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   btnStopRunner.addEventListener('click', async () => {
+    if (popupTimer) { clearInterval(popupTimer); popupTimer = null; }
+    popupRemainingSec = 0;
     const tab = await getCurrentActiveTab();
     if (tab && tab.id) {
       chrome.tabs.sendMessage(tab.id, { action: 'STOP_EXECUTION' }, () => void chrome.runtime.lastError);
@@ -1899,6 +1952,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!st.isRunning) {
           isTabRunning = false;
+          if (popupTimer) { clearInterval(popupTimer); popupTimer = null; }
           // Tab hiện tại đang rảnh (Idle), hiển thị nút Bắt đầu chạy bình thường
           btnStartRunner.style.display = 'flex';
           btnStopRunner.style.display = 'none';
@@ -1919,6 +1973,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (st.isRunning) {
           isTabRunning = true;
+          isPopupTabPaused = !!st.isPaused;
+          if (st.elapsedSec != null) popupElapsedSec = st.elapsedSec;
+          if (st.remainingSec != null) popupRemainingSec = st.remainingSec;
+          startPopupTimeTicker();
           setHeaderStatus(st.hasError ? 'error' : st.isPaused ? 'paused' : 'running', st.isPaused ? 'Tạm dừng' : 'Đang chạy');
           btnStartRunner.style.display = 'none';
           btnStopRunner.style.display = 'flex';

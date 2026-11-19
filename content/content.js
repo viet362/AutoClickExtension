@@ -121,10 +121,12 @@
   // ============================================================
   // ĐỊNH DẠNG & TÍNH TOÁN THỜI GIAN LÀM VIỆC CÒN LẠI (ETA)
   // ============================================================
+  let estimatedTotalJobMs = 0; // Tổng thời gian ước tính để hoàn thành 100% công việc (ms)
+
   function formatEtaDuration(sec) {
     if (sec == null || isNaN(sec) || sec < 0) return 'Đang tính...';
     sec = Math.round(sec);
-    if (sec <= 3) return 'Vài giây';
+    if (sec <= 2) return 'Vài giây';
     if (sec < 60) return `${sec}s`;
     const m = Math.floor(sec / 60);
     const s = sec % 60;
@@ -149,9 +151,85 @@
     return `${h}:${String(remM).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
+  function initTimeMetrics(resumeEstimateMs = 0) {
+    const totalRows = currentDataset.length || 1;
+    const totalSteps = currentScenario?.steps?.length || 1;
+    const repCount = runOptions.repeatCount || 1;
+
+    if (resumeEstimateMs && resumeEstimateMs > 0) {
+      estimatedTotalJobMs = resumeEstimateMs;
+      return;
+    }
+
+    // Tính baseline thời gian cho 1 lượt chạy kịch bản (1 dòng)
+    let singleScenarioBaselineMs = 0;
+    const speed = runOptions.speed || 1;
+    if (currentScenario && Array.isArray(currentScenario.steps) && currentScenario.steps.length > 0) {
+      currentScenario.steps.forEach((st) => {
+        const d = (st.delay != null && !isNaN(st.delay)) ? Math.max(0, Number(st.delay)) : 400;
+        const extra = st.type === 'wait' ? 0 : (runOptions.extraDelayMs || 0);
+        const actionOverhead = (st.type === 'wait' ? 0 : 350) + (st.type === 'click' ? 450 : 200);
+        singleScenarioBaselineMs += (d + extra + actionOverhead) * speed;
+      });
+    } else {
+      singleScenarioBaselineMs = totalSteps * 1000 * speed;
+    }
+
+    singleScenarioBaselineMs = Math.max(singleScenarioBaselineMs, totalSteps * 500 * speed);
+    // Tổng thời gian dự kiến ban đầu cho 100% công việc
+    estimatedTotalJobMs = singleScenarioBaselineMs * totalRows * repCount;
+  }
+
+  function updatePaceEstimate() {
+    if (!isRunning || !executionStartTime) return;
+    const now = Date.now();
+    const currentPausedDelta = (isPaused && lastPauseStartTime > 0) ? (now - lastPauseStartTime) : 0;
+    const activeElapsedMs = Math.max(0, now - executionStartTime - totalPausedMs - currentPausedDelta);
+
+    const totalRows = currentDataset.length || 1;
+    const totalSteps = currentScenario?.steps?.length || 1;
+    const repCount = runOptions.repeatCount || 1;
+    const totalUnits = repCount * totalRows * totalSteps;
+
+    const completedUnits = ((currentCycle * totalRows) + currentRunIndex) * totalSteps + currentStepIndex;
+    if (completedUnits <= 0 || activeElapsedMs < 800) return;
+
+    // Tốc độ thực tế trung bình mỗi đơn vị công việc (ms / unit)
+    const actualMsPerUnit = activeElapsedMs / completedUnits;
+    const actualTotalJobMs = actualMsPerUnit * totalUnits;
+
+    if (!estimatedTotalJobMs || estimatedTotalJobMs <= 0) {
+      estimatedTotalJobMs = actualTotalJobMs;
+      return;
+    }
+
+    if (completedUnits < 5) {
+      // Trong 5 bước đầu, chuyển dần từ baseline sang tốc độ thực tế
+      const weight = completedUnits / 5;
+      estimatedTotalJobMs = (1 - weight) * estimatedTotalJobMs + weight * actualTotalJobMs;
+    } else {
+      // Khi đã chạy ổn định, dùng bộ lọc EMA (Exponential Moving Average) để thích ứng tốc độ mượt mà
+      estimatedTotalJobMs = 0.8 * estimatedTotalJobMs + 0.2 * actualTotalJobMs;
+    }
+
+    // Đảm bảo tổng thời gian dự kiến luôn >= thời gian thực tế đã chạy
+    if (estimatedTotalJobMs < activeElapsedMs) {
+      const remainingUnits = Math.max(0, totalUnits - completedUnits);
+      estimatedTotalJobMs = activeElapsedMs + (remainingUnits * actualMsPerUnit);
+    }
+  }
+
   function calculateTimeMetrics() {
     if (!isRunning || !executionStartTime) {
-      return { elapsedSec: 0, remainingSec: null, etaText: 'Đang tính...', elapsedText: '00:00' };
+      return {
+        elapsedSec: 0,
+        remainingSec: null,
+        totalSec: null,
+        etaText: 'Đang tính...',
+        elapsedText: '00:00',
+        totalText: '00:00',
+        progressPct: 0
+      };
     }
 
     const now = Date.now();
@@ -162,49 +240,49 @@
     const totalRows = currentDataset.length || 1;
     const totalSteps = currentScenario?.steps?.length || 1;
     const repCount = runOptions.repeatCount || 1;
-    const totalWorkUnits = repCount * totalRows * totalSteps;
+    const totalUnits = repCount * totalRows * totalSteps;
 
-    const completedWorkUnits = ((currentCycle * totalRows) + currentRunIndex) * totalSteps + currentStepIndex;
-    const remainingWorkUnits = Math.max(0, totalWorkUnits - completedWorkUnits);
+    const completedUnits = ((currentCycle * totalRows) + currentRunIndex) * totalSteps + currentStepIndex;
+    const remainingUnits = Math.max(0, totalUnits - completedUnits);
 
-    if (remainingWorkUnits === 0) {
-      return { elapsedSec, remainingSec: 0, etaText: '0s', elapsedText: formatClockTime(elapsedSec) };
+    const progressRatio = Math.min(1.0, Math.max(0, completedUnits / totalUnits));
+    const progressPct = Math.min(100, Math.round(progressRatio * 100));
+
+    if (remainingUnits === 0 || progressRatio >= 1.0) {
+      return {
+        elapsedSec,
+        remainingSec: 0,
+        totalSec: elapsedSec,
+        etaText: '0s',
+        elapsedText: formatClockTime(elapsedSec),
+        totalText: formatClockTime(elapsedSec),
+        progressPct: 100
+      };
     }
 
-    // Ước tính ban đầu dựa trên tổng độ trễ cấu hình của các bước
-    let baseScenarioDelayMs = 0;
-    if (currentScenario && Array.isArray(currentScenario.steps)) {
-      currentScenario.steps.forEach((st) => {
-        const d = (st.delay != null && !isNaN(st.delay)) ? Number(st.delay) : 400;
-        baseScenarioDelayMs += d + (runOptions.extraDelayMs || 0) + 300;
-      });
-    } else {
-      baseScenarioDelayMs = totalSteps * 800;
+    if (!estimatedTotalJobMs || estimatedTotalJobMs <= 0) {
+      initTimeMetrics();
     }
-    const speed = runOptions.speed || 1;
-    const avgStepMs = (baseScenarioDelayMs / totalSteps) * speed;
-    const initialRemainingSec = Math.max(1, Math.round((remainingWorkUnits * avgStepMs) / 1000));
 
-    let remainingSec = initialRemainingSec;
+    const totalEstSec = Math.max(1, Math.round(estimatedTotalJobMs / 1000));
 
-    // Khi đã chạy được ít nhất 2 giây và có bước hoàn thành, dùng tốc độ thực tế đã đo
-    if (completedWorkUnits > 0 && activeElapsedMs >= 2000) {
-      const msPerUnit = activeElapsedMs / completedWorkUnits;
-      const actualRemainingSec = Math.round((remainingWorkUnits * msPerUnit) / 1000);
+    // Đếm lùi tự nhiên và ổn định: Còn lại = Tổng thời gian dự kiến (100%) - Thời gian đã chạy
+    let remainingSec = Math.max(0, totalEstSec - elapsedSec);
 
-      if (completedWorkUnits < 3) {
-        const w = completedWorkUnits / 3;
-        remainingSec = Math.round(w * actualRemainingSec + (1 - w) * initialRemainingSec);
-      } else {
-        remainingSec = actualRemainingSec;
-      }
+    // Xử lý bù nếu thời gian chạy thực tế vượt quá ước tính (do mạng hoặc chờ phần tử)
+    if (remainingSec <= 0 && remainingUnits > 0) {
+      const paceMs = completedUnits > 0 ? (activeElapsedMs / completedUnits) : 1000;
+      remainingSec = Math.max(1, Math.round((remainingUnits * paceMs) / 1000));
     }
 
     return {
       elapsedSec,
       remainingSec,
+      totalSec: elapsedSec + remainingSec,
       etaText: formatEtaDuration(remainingSec),
-      elapsedText: formatClockTime(elapsedSec)
+      elapsedText: formatClockTime(elapsedSec),
+      totalText: formatClockTime(elapsedSec + remainingSec),
+      progressPct
     };
   }
 
@@ -214,9 +292,18 @@
     const etaTextEl = $bar('af-eta-text');
     const elapsedTextEl = $bar('af-elapsed-text');
     const etaRowEl = $bar('af-eta-row');
+    const miniStatusEl = $bar('af-mini-status');
+    const repCount = runOptions.repeatCount || 1;
+    const total = currentDataset.length || 1;
+    const absTotal = runOptions.rowOffset + total;
+    const cyclePrefix = repCount > 1 ? `[Vòng ${currentCycle + 1}/${repCount}] ` : '';
+
     if (etaRowEl) etaRowEl.style.display = 'flex';
     if (etaTextEl) etaTextEl.textContent = `⏳ Còn lại: ~${timeMetrics.etaText}`;
     if (elapsedTextEl) elapsedTextEl.textContent = `⏱️ Đã chạy: ${timeMetrics.elapsedText}`;
+    if (miniStatusEl && floatingBar.classList.contains('af-minimized')) {
+      miniStatusEl.textContent = `${cyclePrefix}▶️ Dòng ${absRow(currentRunIndex)}/${absTotal} (Còn ~${timeMetrics.etaText})`;
+    }
   }
 
   // ============================================================
@@ -1876,11 +1963,14 @@
       getTabId().then((id) => { if (id !== null) persistRunPos(); });
       return;
     }
+    const metrics = calculateTimeMetrics();
     storageSet({
       [runPosKey()]: {
         rowIndex: currentRunIndex,
         stepIndex: currentStepIndex,
         cycleIndex: currentCycle,
+        elapsedSec: metrics.elapsedSec,
+        estimatedTotalJobMs: estimatedTotalJobMs,
         logs: executionLogs,
         savedAt: Date.now()
       }
@@ -1973,6 +2063,7 @@
               totalSteps: steps.length,
               onActionDone: () => {
                 currentStepIndex = stepIdx + 1;
+                updatePaceEstimate();
                 persistRunPos();
               }
             });
@@ -2015,6 +2106,7 @@
         });
         currentRunIndex = i + 1;
         currentStepIndex = 0;
+        updatePaceEstimate();
         persistRunPos();
       }
     }
@@ -2120,6 +2212,11 @@
     isRunning = true;
     isPaused = !!(resume && resume.paused);
     errorState = null;
+
+    initTimeMetrics(resume ? (resume.estimatedTotalJobMs || 0) : 0);
+    if (resume && (currentRunIndex > 0 || currentStepIndex > 0)) {
+      updatePaceEstimate();
+    }
 
     if (etaTicker) clearInterval(etaTicker);
     etaTicker = setInterval(() => {
@@ -2291,6 +2388,8 @@
         rowIndex: pos.rowIndex,
         stepIndex: pos.stepIndex,
         cycleIndex: pos.cycleIndex || 0,
+        elapsedSec: pos.elapsedSec || 0,
+        estimatedTotalJobMs: pos.estimatedTotalJobMs || 0,
         logs: pos.logs,
         paused: !sameOrigin
       });
