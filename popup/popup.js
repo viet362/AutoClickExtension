@@ -19,7 +19,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const stepsCountBadge = document.getElementById('stepsCountBadge');
   const btnAutoMapColumns = document.getElementById('btnAutoMapColumns');
   const btnAddWaitStep = document.getElementById('btnAddWaitStep');
+  const btnAddNavStep = document.getElementById('btnAddNavStep');
   const btnAddManualStep = document.getElementById('btnAddManualStep');
+  const modalNavGroup = document.getElementById('modalNavGroup');
+  const modalNavUrl = document.getElementById('modalNavUrl');
   const bulkDelayBar = document.getElementById('bulkDelayBar');
   const bulkDelaySecInput = document.getElementById('bulkDelaySecInput');
   const btnApplyBulkDelay = document.getElementById('btnApplyBulkDelay');
@@ -553,6 +556,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (step.type === 'type') icon = '⌨️';
       else if (step.type === 'keypress') icon = '⏎';
       else if (step.type === 'wait') icon = '⏱️';
+      else if (step.type === 'navigate' || step.type === 'open_url') icon = '🌐';
 
       const isMappedCol = step.type === 'type' && step.value && headers.includes(step.value.replace(/^\{+|\}+$/g, '').trim());
       const valBadge = step.type === 'type' && step.value
@@ -560,6 +564,10 @@ document.addEventListener('DOMContentLoaded', () => {
         : step.type === 'keypress' && step.key
           ? `<span class="step-badge-tag" style="color: #fcd34d;">Phím: ${escapeHtml(step.key)}</span>`
           : '';
+
+      const navBadge = (step.type === 'navigate' || step.type === 'open_url') && (step.url || step.value)
+        ? `<span class="step-badge-tag" style="color: #38bdf8;">🌐 ${escapeHtml(step.url || step.value)}</span>`
+        : '';
 
       const optBadge = step.optional
         ? `<span class="step-badge-tag" style="color: #fbbf24;">Tùy chọn</span>`
@@ -575,6 +583,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="step-meta">
               <span class="step-badge-tag">${escapeHtml((step.type || 'click').toUpperCase())}</span>
               ${valBadge}
+              ${navBadge}
               ${optBadge}
               <label class="step-delay-inline" title="Chỉnh trực tiếp số giây chờ trước bước này">
                 ⏱️ <input type="number" class="step-delay-input" data-idx="${idx}" min="0" max="300" step="0.5" value="${delaySec}">s
@@ -798,6 +807,29 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Nút chèn nhanh bước Mở URL / Điều hướng sang trang web khác
+  if (btnAddNavStep) {
+    btnAddNavStep.addEventListener('click', () => {
+      if (!activeScenarioId || !scenarios[activeScenarioId]) {
+        alert('Vui lòng tạo kịch bản trước khi thêm bước mở URL!');
+        return;
+      }
+      const rawUrl = prompt('Nhập địa chỉ URL trang web cần chuyển tới:\n(Ví dụ: https://example.com hoặc {URL_Cot} từ Excel)', 'https://');
+      if (!rawUrl || rawUrl.trim() === 'https://') return;
+      scenarios[activeScenarioId].steps.push({
+        id: `step_${Date.now()}`,
+        type: 'navigate',
+        url: rawUrl.trim(),
+        description: `Mở URL: ${rawUrl.trim()}`,
+        delay: 1000
+      });
+      saveScenarios();
+      renderScenarioDropdown();
+      renderStepsList();
+      updateRunnerCard();
+    });
+  }
+
   // ============================================================
   // 4. MODAL CHỈNH SỬA BƯỚC
   // ============================================================
@@ -813,12 +845,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (modalStepTimeout) modalStepTimeout.value = Math.round((Number(step.timeout) > 0 ? Number(step.timeout) : 30000) / 1000);
     if (modalStepOptional) modalStepOptional.checked = !!step.optional;
 
-    if (modalSelectorGroup) modalSelectorGroup.style.display = step.type === 'wait' ? 'none' : 'flex';
-    if (modalTimeoutGroup) modalTimeoutGroup.style.display = step.type === 'wait' ? 'none' : 'flex';
+    const isNav = step.type === 'navigate' || step.type === 'open_url';
+    if (modalSelectorGroup) modalSelectorGroup.style.display = (step.type === 'wait' || isNav) ? 'none' : 'flex';
+    if (modalTimeoutGroup) modalTimeoutGroup.style.display = (step.type === 'wait' || isNav) ? 'none' : 'flex';
 
     // Reset hiển thị các nhóm
     modalTypeGroup.style.display = 'none';
     modalClickTableGroup.style.display = 'none';
+    if (modalNavGroup) {
+      modalNavGroup.style.display = isNav ? 'block' : 'none';
+      if (modalNavUrl) modalNavUrl.value = step.url || step.value || '';
+    }
 
     if (step.type === 'type') {
       modalTypeGroup.style.display = 'block';
@@ -959,6 +996,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const headers = getPrimaryHeaders(dataset);
         step.value = headers.includes(cleanCustom) ? cleanCustom : customVal;
       }
+    } else if (step.type === 'navigate' || step.type === 'open_url') {
+      if (modalNavUrl) step.url = modalNavUrl.value.trim();
+      step.description = modalStepDesc.value.trim() || `Mở URL: ${step.url || ''}`;
     }
 
     saveScenarios();
@@ -972,24 +1012,26 @@ document.addEventListener('DOMContentLoaded', () => {
       alert('Vui lòng tạo kịch bản trước khi thêm bước!');
       return;
     }
-    const rawType = prompt('Chọn loại bước cần thêm (click, type, keypress, wait):', 'click');
+    const rawType = prompt('Chọn loại bước cần thêm (click, type, keypress, wait, navigate):', 'click');
     if (!rawType) return;
     const type = rawType.trim().toLowerCase();
-    if (!['click', 'type', 'keypress', 'wait'].includes(type)) {
-      alert('Loại bước không hợp lệ! Chỉ hỗ trợ: click, type, keypress, wait.');
+    if (!['click', 'type', 'keypress', 'wait', 'navigate', 'open_url'].includes(type)) {
+      alert('Loại bước không hợp lệ! Chỉ hỗ trợ: click, type, keypress, wait, navigate.');
       return;
     }
 
     const headers = getPrimaryHeaders(dataset);
     const defaultCol = headers[0] || 'Cot_A';
+    const isNav = type === 'navigate' || type === 'open_url';
     const newStep = {
       id: `step_${Date.now()}`,
       type,
-      selector: type === 'wait' ? '' : (type === 'type' ? 'input[type="text"], textarea' : 'button[type="submit"]'),
+      url: isNav ? 'https://' : undefined,
+      selector: (type === 'wait' || isNav) ? '' : (type === 'type' ? 'input[type="text"], textarea' : 'button[type="submit"]'),
       value: type === 'type' ? defaultCol : '',
       key: type === 'keypress' ? 'Enter' : undefined,
-      description: type === 'wait' ? 'Chờ cố định' : `Thao tác ${type}`,
-      delay: type === 'wait' ? 1000 : 400
+      description: type === 'wait' ? 'Chờ cố định' : (isNav ? 'Mở URL mới' : `Thao tác ${type}`),
+      delay: (type === 'wait' || isNav) ? 1000 : 400
     };
 
     scenarios[activeScenarioId].steps.push(newStep);

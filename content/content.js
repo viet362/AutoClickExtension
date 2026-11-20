@@ -864,6 +864,7 @@
         scenarioName: currentRecordingScenarioName,
         mode: currentRecordingMode,
         steps: recordedSteps,
+        lastRecordedUrl: location.href,
         savedAt: Date.now()
       }
     });
@@ -919,6 +920,12 @@
     if (!isRecording) return;
     const target = e.target;
     if (!(target instanceof Element) || isOwnElement(target)) return;
+
+    // Giữ liên kết mở trong cùng tab để ghi xuyên trang trong cùng 1 cửa sổ
+    const anchor = target.closest('a');
+    if (anchor && anchor.target === '_blank') {
+      anchor.target = '_self';
+    }
 
     const now = Date.now();
     // Bỏ qua các click "ảo" do trình duyệt tự sinh (detail === 0):
@@ -1851,6 +1858,26 @@
       return { ok: true };
     }
 
+    // Bước Điều hướng / Mở trang web khác (Hỗ trợ chạy nhiều trang trong 1 kịch bản)
+    if (step.type === 'navigate' || step.type === 'open_url') {
+      const targetUrl = resolveValue(step.url || step.value || '', rowData).trim();
+      if (!targetUrl) {
+        return { ok: false, error: 'Chưa cấu hình URL trang web cần chuyển tới!' };
+      }
+      setInfoMain(`[Dòng ${absRow(currentRunIndex)} • Bước ${ctx.stepNum}/${ctx.totalSteps}] Đang mở trang: ${targetUrl}...`);
+      await smartSleep(preWait, token);
+      ctx.onActionDone();
+
+      const currentClean = location.href.replace(/\/+$/, '');
+      const targetClean = targetUrl.replace(/\/+$/, '');
+      if (currentClean === targetClean) {
+        return { ok: true };
+      }
+
+      window.location.href = targetUrl;
+      return { ok: true, navigating: true };
+    }
+
     if (!['click', 'type', 'keypress'].includes(step.type)) {
       return { ok: false, error: `Loại bước không được hỗ trợ: "${step.type}"` };
     }
@@ -1907,6 +1934,10 @@
       }
 
       if (step.type === 'click') {
+        const anchor = target.closest('a');
+        if (anchor && anchor.target === '_blank') {
+          anchor.target = '_self'; // Ép chuyển hướng trong cùng tab/cửa sổ thay vì mở tab mới
+        }
         simulateClick(target);
         lastClickedTrigger = {
           el: target,
@@ -2074,6 +2105,10 @@
           if (!isAlive(token)) return;
 
           if (result.ok) {
+            if (result.navigating) {
+              // Đang chuyển hướng sang trang web khác trong cùng tab, dừng luồng trang cũ để trang mới tiếp quản
+              return;
+            }
             s++;
             continue;
           }
@@ -2370,7 +2405,26 @@
         currentRecordingScenarioId = rec.scenarioId || null;
         currentRecordingScenarioName = rec.scenarioName || null;
         currentRecordingMode = rec.mode || 'overwrite';
-        startRecording(rec);
+
+        // Kiểm tra nếu trang vừa chuyển sang URL mới (khác URL lưu trước đó)
+        const prevUrl = (rec.lastRecordedUrl || '').replace(/\/+$/, '');
+        const currentUrl = location.href.replace(/\/+$/, '');
+        const recSteps = Array.isArray(rec.steps) ? rec.steps : [];
+        const lastStep = recSteps[recSteps.length - 1];
+
+        // Nếu người dùng gõ URL mới hoặc điều hướng trực tiếp (không qua click link/nút)
+        if (prevUrl && prevUrl !== currentUrl && (!lastStep || (lastStep.type !== 'click' && lastStep.type !== 'navigate'))) {
+          recSteps.push({
+            id: genStepId(),
+            type: 'navigate',
+            url: location.href,
+            description: `Chuyển đến trang: ${document.title || location.hostname}`,
+            delay: 1000
+          });
+        }
+
+        startRecording({ ...rec, steps: recSteps });
+        showToast(`🔴 Đang tiếp tục ghi mẫu trên: ${location.hostname} (${recSteps.length} bước)`, 'info', 3000);
         return;
       }
     }
@@ -2382,7 +2436,6 @@
         storageRemove([runKey(), runPosKey()]);
         return;
       }
-      const sameOrigin = run.origin === location.origin;
       await sleep(600); // Cho trang mới ổn định
       startExecution(run.scenario, run.dataset, run.options || {}, {
         rowIndex: pos.rowIndex,
@@ -2391,8 +2444,10 @@
         elapsedSec: pos.elapsedSec || 0,
         estimatedTotalJobMs: pos.estimatedTotalJobMs || 0,
         logs: pos.logs,
-        paused: !sameOrigin
+        paused: false
       });
+      showToast(`🌐 Đang tiếp tục kịch bản trên: ${location.hostname}`, 'info', 3000);
+      return;
     }
   }
 

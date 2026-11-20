@@ -100,6 +100,7 @@
           <div style="display: flex; gap: 6px; align-items: center;">
             <button class="btn btn-link btn-xs" id="btnAutoMapColumns" title="Tự động gán cột Excel cho các bước gõ dữ liệu trùng với giá trị trong file">🪄 Tự gán cột</button>
             <button class="btn btn-link btn-xs" id="btnAddWaitStep" title="Chèn thêm một bước nghỉ/chờ cố định (tính bằng giây)">⏱️ +Bước chờ</button>
+            <button class="btn btn-link btn-xs" id="btnAddNavStep" title="Chèn thêm một bước mở hoặc chuyển hướng đến URL khác">🌐 +Mở URL</button>
             <button class="btn btn-link btn-xs" id="btnAddManualStep">+ Thêm bước</button>
           </div>
         </div>
@@ -434,6 +435,12 @@
               <input type="number" id="modalRowIndex" class="form-input-modal" placeholder="Ví dụ: 4 (Dòng số 4)" min="1">
               <span class="help-text">Click nút bút chì ở dòng thứ N trong bảng kết quả.</span>
             </div>
+          </div>
+
+          <div id="modalNavGroup" style="display: none; margin-top: 10px;">
+            <label class="section-label">Địa chỉ URL trang web (hỗ trợ {Tên_Cột_Excel}):</label>
+            <input type="text" id="modalNavUrl" class="form-input-modal" placeholder="https://example.com hoặc {URL_Trang}">
+            <span class="help-text">Có thể nhập URL trực tiếp hoặc chèn {Tên_Cột_Excel} để mở link web động theo từng dòng.</span>
           </div>
 
           <div class="form-group-modal" style="margin-top: 10px;">
